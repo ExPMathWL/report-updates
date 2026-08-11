@@ -212,7 +212,7 @@
 
 <header class="top">
   <div class="wrap">
-    <div class="wordmark">M A<span class="plus">+</span>THNASIUM<span class="sub">West Linn · Staff Tool</span></div>
+    <div class="wordmark">MATHNASIUM<span class="sub">West Linn · Staff Tool</span></div>
     <h1>Progress Report Builder</h1>
     <p>Upload two Radius assessment-chart PDFs (or one comparison chart), review the parsed scores, and draft a parent update email.</p>
   </div>
@@ -276,6 +276,11 @@
         <div class="field"><label>Previous learning plan / level (optional)</label><input type="text" id="prevPlan" placeholder="e.g. Level 7"></div>
         <div class="field"><label>Your name (sender)</label><input type="text" id="staffName" placeholder="e.g. Rebecca"></div>
       </div>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13.5px;font-weight:600;margin-bottom:10px;cursor:pointer;">
+        <input type="checkbox" id="preAssessmentToggle">
+        This is a pre-assessment (only one chart, nothing to compare it to)
+      </label>
+      <p class="desc" style="margin-top:0;">When checked, the results table below switches from "improved" to "showed mastery" (100% topics), and the email skips the score-comparison language since there's no previous score.</p>
       <div id="scoreChipWrap"></div>
     </div>
   </div>
@@ -288,7 +293,7 @@
       <div class="hint">Check the boxes you want to mention in the email</div>
     </div>
     <div class="step-body">
-      <p class="desc">"Improved" is auto-checked where the score went up. "New at this level" is auto-checked for topics that only appear on the current assessment (grade-level-up case). Uncheck anything you don't want in the email, or edit any cell directly.</p>
+      <p class="desc" id="tableDesc">"Improved" is auto-checked where the score went up. "New at this level" is auto-checked for topics that only appear on the current assessment (grade-level-up case). Uncheck anything you don't want in the email, or edit any cell directly.</p>
       <div id="tableHost"></div>
       <div class="cat-add">
         <button class="btn-secondary btn-sm" id="addCatBtn">+ Add category</button>
@@ -297,9 +302,32 @@
   </div>
 
   <!-- STEP 4 -->
-  <div class="step" id="stepPlan" style="display:none;">
+  <div class="step" id="stepExtra" style="display:none;">
     <div class="step-head">
       <div class="step-num">4</div>
+      <h2>Additional assessments <span style="font-weight:400;color:var(--ink-soft);">(optional)</span></h2>
+      <div class="hint">Numerical Fluency, etc.</div>
+    </div>
+    <div class="step-body">
+      <p class="desc">For assessments outside the main skill chart — Numerical Fluency is the common one. Upload its PDF if it uses the same Radius chart layout, or just fill in the summary by hand.</p>
+      <div id="extraHost"></div>
+      <datalist id="assessmentPresets">
+        <option value="Numerical Fluency - Addition and Subtraction">
+        <option value="Numerical Fluency - Multiplication and Division">
+        <option value="Geometry Extension Assessment">
+        <option value="Computation Assessment (5th-8th)">
+        <option value="High School Fundamental Skills (9th-12th)">
+      </datalist>
+      <div class="cat-add">
+        <button class="btn-secondary btn-sm" id="addExtraBtn">+ Add another assessment</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 5 -->
+  <div class="step" id="stepPlan" style="display:none;">
+    <div class="step-head">
+      <div class="step-num">5</div>
       <h2>New learning plan topics</h2>
       <div class="hint">Pulled by hand from Radius / the Learning Plan report</div>
     </div>
@@ -311,10 +339,10 @@ Integer Subtraction/Multiplication and Division with Two Numbers"></textarea>
     </div>
   </div>
 
-  <!-- STEP 5 -->
+  <!-- STEP 6 -->
   <div class="step" id="stepEmail" style="display:none;">
     <div class="step-head">
-      <div class="step-num">5</div>
+      <div class="step-num">6</div>
       <h2>Drafted email</h2>
       <div class="hint">Edit freely before sending</div>
     </div>
@@ -328,7 +356,7 @@ Integer Subtraction/Multiplication and Division with Two Numbers"></textarea>
     </div>
   </div>
 
-  <div class="footer-note">Built for Mathnasium of West Linn — runs entirely in your browser, nothing is uploaded anywhere.</div>
+  <div class="footer-note">Built for Exponential Potential Mathnasiums — runs entirely in your browser, nothing is uploaded anywhere.</div>
 </div>
 
 <script>
@@ -361,10 +389,16 @@ function wireDrop(slot){
 wireDrop('A'); wireDrop('B');
 
 document.getElementById('manualBtn').addEventListener('click', ()=>{
-  dataset = { studentName:'', prevScore:'', prevDate:'', currScore:'', currDate:'', categories: [] };
+  dataset = { studentName:'', prevScore:'', prevDate:'', currScore:'', currDate:'', categories: [], singleChartMode:false };
   revealSteps();
+  document.getElementById('preAssessmentToggle').checked = false;
   renderMeta();
   addCategory('New category');
+  renderTable();
+});
+
+document.getElementById('preAssessmentToggle').addEventListener('change', e=>{
+  dataset.singleChartMode = e.target.checked;
   renderTable();
 });
 
@@ -479,6 +513,65 @@ function parseChart(rows){
   return chart;
 }
 
+/* ---------------------------------------------------------
+   NARRATIVE REPORT PARSER — for the family-facing "Assessment
+   Report" / "Mastery Report" PDFs (used for Numerical Fluency
+   and similar add-on assessments). These don't use the
+   percentage-bar layout above; scores appear as plain
+   "Category Name  N / M" text lines, which is reliable to
+   regex-match once rows are reconstructed in reading order.
+   The 3-wide summary cards at the very top of these reports
+   interleave unpredictably in text order, so this parser
+   deliberately ignores that section and reads the clean
+   single-column "Topics Mastered / Topics in Progress" and
+   "Assessment Skills" sections instead.
+--------------------------------------------------------- */
+function parseNarrativeReport(rows){
+  const lines = rows.map(r => r.map(i=>i.text).join(' ').replace(/\s+/g,' ').trim()).filter(Boolean);
+  const fullText = lines.join('\n');
+
+  if(!/Assessment Report|Mastery Report/i.test(fullText)) return null;
+
+  const isMastery = /Mastery Report/i.test(fullText);
+
+  let studentName = '';
+  for(const l of lines){
+    if(!/^(Mathnasium|Assessment Report|Mastery Report|Results|Below|This is)/i.test(l)){
+      studentName = l; break;
+    }
+  }
+
+  let dateStr = '';
+  for(const l of lines){
+    const m = l.match(/[A-Za-z]+ \d{1,2},\s*\d{4}/) || l.match(/\d{1,2}\/\d{1,2}\/\d{4}/);
+    if(m){ dateStr = m[0]; break; }
+  }
+
+  const categories = [];
+  let overall = null;
+  let pastHeader = false;
+
+  lines.forEach(l=>{
+    if(!pastHeader){
+      if(/^Assessment (Topics|Skills)$/i.test(l)) pastHeader = true;
+      return; // skip the interleaved multi-column summary cards at the top entirely
+    }
+    const overallMatch = l.match(/^Skills Mastered\s+(\d+)\s*\/\s*(\d+)\s+(\d+)%\s*$/i);
+    if(overallMatch){
+      overall = {num:overallMatch[1], den:overallMatch[2], pct:overallMatch[3]};
+      return;
+    }
+    const m = l.match(/^(.+?)\s+(\d+)\s*\/\s*(\d+)\s*$/);
+    if(m){
+      const name = m[1].trim();
+      if(/^(Topics|Strengths|Opportunities|To Do|Mastered|Skills Mastered)$/i.test(name)) return;
+      categories.push({name, num:m[2], den:m[3]});
+    }
+  });
+
+  return {mode: isMastery ? 'mastery' : 'assessment', studentName, date:dateStr, categories, overall};
+}
+
 /* Merge a comparison-mode chart (topics appear twice: pre then post) into prev/curr pairs */
 function foldComparisonChart(chart){
   const out = {studentName:chart.studentName, prevScore:chart.scores[0]||'', currScore:chart.scores[1]||'',
@@ -566,16 +659,18 @@ document.getElementById('parseBtn').addEventListener('click', async ()=>{
       if(chart.mode==='comparison'){
         merged = foldComparisonChart(chart);
       } else {
-        // single assessment only, no comparison available
+        // single assessment only, no comparison available -> pre-assessment case
         merged = {studentName:chart.studentName, prevScore:'', prevDate:'',
                    currScore:chart.scores[0]||'', currDate:chart.dates[0]||'',
-                   categories: chart.categories.map(c=>({name:c.name, topics:c.topics.map(t=>({name:t.name, prev:null, curr:t.percent}))}))};
+                   categories: chart.categories.map(c=>({name:c.name, topics:c.topics.map(t=>({name:t.name, prev:null, curr:t.percent}))})),
+                   singleChartMode:true};
       }
     }
     dataset = merged;
     statusEl.textContent = 'Parsed. Review the details below — fix anything that looks off.';
     statusEl.className = 'status ok';
     revealSteps();
+    document.getElementById('preAssessmentToggle').checked = !!dataset.singleChartMode;
     renderMeta();
     renderTable();
   } catch(e){
@@ -588,8 +683,11 @@ document.getElementById('parseBtn').addEventListener('click', async ()=>{
 function revealSteps(){
   document.getElementById('stepMeta').style.display='block';
   document.getElementById('stepTable').style.display='block';
+  document.getElementById('stepExtra').style.display='block';
   document.getElementById('stepPlan').style.display='block';
   document.getElementById('stepEmail').style.display='block';
+  if(!extraCharts.length) addExtraCard();
+  renderExtra();
 }
 
 /* ---------------------------------------------------------
@@ -632,14 +730,25 @@ function updateScoreChip(){
 --------------------------------------------------------- */
 function renderTable(){
   const host = document.getElementById('tableHost');
+  const preMode = !!dataset.singleChartMode;
+
+  const descEl = document.getElementById('tableDesc');
+  descEl.textContent = preMode
+    ? '"Showed mastery" is auto-checked for any topic scored 100% on this assessment. Uncheck anything you don\'t want in the email, or edit any cell directly.'
+    : '"Improved" is auto-checked where the score went up. "New at this level" is auto-checked for topics that only appear on the current assessment (grade-level-up case). Uncheck anything you don\'t want in the email, or edit any cell directly.';
+
   if(!dataset.categories.length){
     host.innerHTML = '<div class="empty-note">No categories yet — add one below.</div>';
     return;
   }
+
+  const extraCols = preMode
+    ? `<th style="width:70px;">Current</th><th style="width:130px;">Showed mastery?</th>`
+    : `<th style="width:70px;">Prev</th><th style="width:70px;">Current</th><th style="width:60px;">Δ</th><th style="width:90px;">Improved?</th><th style="width:90px;">New?</th>`;
+
   let html = `<table class="results"><thead><tr>
     <th style="width:28px;"></th>
-    <th>Topic</th><th style="width:70px;">Prev</th><th style="width:70px;">Current</th>
-    <th style="width:60px;">Δ</th><th style="width:90px;">Improved?</th><th style="width:90px;">New?</th><th></th>
+    <th>Topic</th>${extraCols}<th></th>
   </tr></thead><tbody>`;
 
   dataset.categories.forEach((cat, ci)=>{
@@ -652,20 +761,33 @@ function renderTable(){
     </div></td></tr>`;
 
     cat.topics.forEach((t, ti)=>{
+      const rowId = `${ci}_${ti}`;
+
+      if(preMode){
+        const cv = t.curr!==null ? parseFloat(t.curr) : null;
+        const masteryChecked = cv===100;
+        html += `<tr data-row="${rowId}">
+          <td></td>
+          <td><input type="text" class="topicName" data-row="${rowId}" value="${escapeAttr(t.name)}"></td>
+          <td><input type="text" class="num currVal" data-row="${rowId}" value="${t.curr!==null?escapeAttr(t.curr):''}" placeholder="—"></td>
+          <td style="text-align:center;"><input type="checkbox" class="masteryChk" data-row="${rowId}" ${masteryChecked?'checked':''}></td>
+          <td><button class="tag-del delRowBtn" data-row="${rowId}" title="Delete row">✕</button></td>
+        </tr>`;
+        return;
+      }
+
       const pv = t.prev!==null ? parseFloat(t.prev) : null;
       const cv = t.curr!==null ? parseFloat(t.curr) : null;
-      let deltaText = '—', deltaCls='flat', improvedChecked=false, isNew=false, isRetired=false;
+      let deltaText = '—', improvedChecked=false, isNew=false;
       if(pv!==null && cv!==null){
         const d = Math.round((cv-pv)*10)/10;
         deltaText = (d>0?'+':'')+d+'%';
-        deltaCls = d>0?'pos':(d<0?'neg':'flat');
         improvedChecked = d>0;
       } else if(pv===null && cv!==null){
         deltaText = '<span class="pill na">new</span>'; isNew=true;
       } else if(pv!==null && cv===null){
-        deltaText = '<span class="pill na">retired</span>'; isRetired=true;
+        deltaText = '<span class="pill na">retired</span>';
       }
-      const rowId = `${ci}_${ti}`;
       html += `<tr data-row="${rowId}">
         <td></td>
         <td><input type="text" class="topicName" data-row="${rowId}" value="${escapeAttr(t.name)}"></td>
@@ -721,6 +843,152 @@ function addCategory(name){
   dataset.categories.push({name, topics:[{name:'New topic', prev:null, curr:null}]});
 }
 
+/* ---------------------------------------------------------
+   ADDITIONAL ASSESSMENTS (Numerical Fluency, etc.)
+--------------------------------------------------------- */
+let extraCharts = []; // [{id, label, score, topics:[{name,curr,checked}]}]
+let extraCounter = 0;
+
+function addExtraCard(){
+  extraCounter++;
+  extraCharts.push({id:extraCounter, label: extraCharts.length===0 ? 'Numerical Fluency Assessment' : 'Additional Assessment', score:'', topics:[]});
+}
+
+document.getElementById('addExtraBtn').addEventListener('click', ()=>{
+  addExtraCard();
+  renderExtra();
+});
+
+function renderExtra(){
+  const host = document.getElementById('extraHost');
+  if(!extraCharts.length){
+    host.innerHTML = '<div class="empty-note">No additional assessments added.</div>';
+    return;
+  }
+  let html = '';
+  extraCharts.forEach(card=>{
+    html += `<div class="step" style="margin-top:14px;border-color:var(--line);">
+      <div class="step-body" style="padding:14px 16px;">
+        <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-bottom:12px;">
+          <div class="field" style="flex:1;min-width:200px;">
+            <label>Assessment name</label>
+            <input type="text" class="extraLabel" data-id="${card.id}" value="${escapeAttr(card.label)}" list="assessmentPresets">
+          </div>
+          <div class="field" style="width:120px;">
+            <label>Overall score</label>
+            <input type="text" class="extraScore" data-id="${card.id}" value="${escapeAttr(card.score)}" placeholder="e.g. 88%">
+          </div>
+          <div class="field" style="width:auto;">
+            <label style="visibility:hidden;">up</label>
+            <input type="file" accept="application/pdf" class="extraFile" data-id="${card.id}" style="font-size:12px;max-width:170px;">
+          </div>
+          <button class="tag-del delExtraBtn" data-id="${card.id}" title="Remove this assessment" style="margin-bottom:8px;">✕ Remove</button>
+        </div>
+        <div class="extraStatus status" data-id="${card.id}"></div>
+        <table class="results" style="margin-top:8px;">
+          <thead><tr><th>Topic / note</th><th style="width:70px;">Score</th><th style="width:70px;">Mention?</th><th></th></tr></thead>
+          <tbody>
+          ${card.topics.map((t,ti)=>`
+            <tr>
+              <td><input type="text" class="extraTopicName" data-id="${card.id}" data-ti="${ti}" value="${escapeAttr(t.name)}"></td>
+              <td><input type="text" class="num extraTopicScore" data-id="${card.id}" data-ti="${ti}" value="${escapeAttr(t.curr||'')}" placeholder="—"></td>
+              <td style="text-align:center;"><input type="checkbox" class="extraTopicChk" data-id="${card.id}" data-ti="${ti}" ${t.checked?'checked':''}></td>
+              <td><button class="tag-del extraDelRow" data-id="${card.id}" data-ti="${ti}">✕</button></td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+        <button class="btn-secondary btn-sm" style="margin-top:8px;" data-id="${card.id}" id="extraAddRow_${card.id}">+ topic / note</button>
+      </div>
+    </div>`;
+  });
+  host.innerHTML = html;
+
+  host.querySelectorAll('.extraLabel').forEach(el=>el.addEventListener('input', e=>{
+    const card = extraCharts.find(c=>c.id===+e.target.dataset.id);
+    card.label = e.target.value;
+  }));
+  host.querySelectorAll('.extraScore').forEach(el=>el.addEventListener('input', e=>{
+    const card = extraCharts.find(c=>c.id===+e.target.dataset.id);
+    card.score = e.target.value;
+  }));
+  host.querySelectorAll('.delExtraBtn').forEach(el=>el.addEventListener('click', e=>{
+    extraCharts = extraCharts.filter(c=>c.id!==+e.target.dataset.id);
+    renderExtra();
+  }));
+  host.querySelectorAll('.extraTopicName').forEach(el=>el.addEventListener('input', e=>{
+    const card = extraCharts.find(c=>c.id===+e.target.dataset.id);
+    card.topics[+e.target.dataset.ti].name = e.target.value;
+  }));
+  host.querySelectorAll('.extraTopicScore').forEach(el=>el.addEventListener('input', e=>{
+    const card = extraCharts.find(c=>c.id===+e.target.dataset.id);
+    card.topics[+e.target.dataset.ti].curr = e.target.value;
+  }));
+  host.querySelectorAll('.extraTopicChk').forEach(el=>el.addEventListener('change', e=>{
+    const card = extraCharts.find(c=>c.id===+e.target.dataset.id);
+    card.topics[+e.target.dataset.ti].checked = e.target.checked;
+  }));
+  host.querySelectorAll('.extraDelRow').forEach(el=>el.addEventListener('click', e=>{
+    const card = extraCharts.find(c=>c.id===+e.target.dataset.id);
+    card.topics.splice(+e.target.dataset.ti,1);
+    renderExtra();
+  }));
+  extraCharts.forEach(card=>{
+    const btn = document.getElementById('extraAddRow_'+card.id);
+    if(btn) btn.addEventListener('click', ()=>{
+      card.topics.push({name:'', curr:'', checked:true});
+      renderExtra();
+    });
+  });
+  host.querySelectorAll('.extraFile').forEach(el=>el.addEventListener('change', async e=>{
+    const card = extraCharts.find(c=>c.id===+e.target.dataset.id);
+    const statusEl = host.querySelector(`.extraStatus[data-id="${card.id}"]`);
+    const file = e.target.files[0];
+    if(!file) return;
+    statusEl.textContent = 'Reading PDF...';
+    statusEl.className = 'status';
+    try{
+      const rows = await extractRowsFromPDF(file);
+
+      // try the percentage-bar chart layout first (grade-level style charts,
+      // which Geometry Extension / Computation / HS Fundamentals also use)
+      const chart = parseChart(rows);
+      const topics = [];
+      chart.categories.forEach(cat=>cat.topics.forEach(t=>topics.push({name:t.name, curr:t.percent, checked:true})));
+
+      if(topics.length){
+        card.topics = topics;
+        if(chart.scores[0]) card.score = chart.scores[0];
+        if(chart.studentName && !document.getElementById('studentName').value){
+          document.getElementById('studentName').value = chart.studentName;
+        }
+        statusEl.textContent = `Parsed ${topics.length} row(s) — review below.`;
+        statusEl.className = 'status ok';
+      } else {
+        // fall back to the narrative "Assessment Report" / "Mastery Report" layout
+        // (the format Numerical Fluency results typically come in)
+        const narrative = parseNarrativeReport(rows);
+        if(narrative && narrative.categories.length){
+          card.topics = narrative.categories.map(c => ({name:c.name, curr:`${c.num}/${c.den}`, checked:true}));
+          if(narrative.overall) card.score = `${narrative.overall.num}/${narrative.overall.den} (${narrative.overall.pct}%)`;
+          if(narrative.studentName && !document.getElementById('studentName').value){
+            document.getElementById('studentName').value = narrative.studentName;
+          }
+          statusEl.textContent = `Parsed ${narrative.categories.length} row(s) from the report — review below.`;
+          statusEl.className = 'status ok';
+        } else {
+          statusEl.textContent = 'Could not auto-read that PDF (this happens with the raw checkbox-style Numerical Fluency checkup — the checkmarks are images, not text). Add the score/notes by hand below instead.';
+          statusEl.className = 'status err';
+        }
+      }
+      renderExtra();
+    } catch(err){
+      console.error(err);
+      statusEl.textContent = 'Could not parse that PDF — add notes by hand below instead.';
+      statusEl.className = 'status err';
+    }
+  }));
+}
+
 function escapeAttr(s){
   return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
 }
@@ -742,20 +1010,24 @@ document.getElementById('genBtn').addEventListener('click', ()=>{
   const prevPlan = document.getElementById('prevPlan').value.trim();
   const currScore = dataset.currScore || document.getElementById('currScore').value.trim();
   const prevScore = dataset.prevScore || document.getElementById('prevScore').value.trim();
+  const preMode = !!dataset.singleChartMode;
 
   const pv = parseFloat(prevScore), cv = parseFloat(currScore);
   let scoreLine = '';
-  if(!isNaN(pv) && !isNaN(cv)){
+  if(!preMode && !isNaN(pv) && !isNaN(cv)){
     const d = Math.round((cv-pv)*10)/10;
     if(d>0) scoreLine = `On ${pr.poss} most recent attempt, ${pr.subj} improved ${pr.poss} score by ${d}%-points, scoring ${currScore} overall.`;
     else if(d<0) scoreLine = `On ${pr.poss} most recent attempt, ${pr.subj} scored ${currScore} overall.`;
     else scoreLine = `On ${pr.poss} most recent attempt, ${pr.subj} held steady, scoring ${currScore} overall.`;
   } else if(!isNaN(cv)){
-    scoreLine = `${student} scored ${currScore} overall on this assessment.`;
+    scoreLine = preMode
+      ? `${student} scored ${currScore} overall on ${pr.poss} initial assessment.`
+      : `${student} scored ${currScore} overall on this assessment.`;
   }
 
   const improved = [];
   const newTopics = [];
+  const mastery = [];
   document.querySelectorAll('.improveChk').forEach(cb=>{
     if(cb.checked){
       const [ci,ti] = cb.dataset.row.split('_').map(Number);
@@ -768,24 +1040,53 @@ document.getElementById('genBtn').addEventListener('click', ()=>{
       newTopics.push(dataset.categories[ci].topics[ti].name);
     }
   });
+  document.querySelectorAll('.masteryChk').forEach(cb=>{
+    if(cb.checked){
+      const [ci,ti] = cb.dataset.row.split('_').map(Number);
+      mastery.push(dataset.categories[ci].topics[ti].name);
+    }
+  });
   const planTopics = document.getElementById('planTopics').value.split('\n').map(s=>s.trim()).filter(Boolean);
+
+  // additional assessments (Numerical Fluency, etc.)
+  const extraNotes = extraCharts
+    .filter(c => c.label.trim())
+    .map(c => {
+      const checkedTopics = c.topics.filter(t=>t.checked && t.name.trim()).map(t=>t.name.trim());
+      if(!c.score.trim() && !checkedTopics.length) return null;
+      let line = `${student} also completed the ${c.label.trim()}`;
+      if(c.score.trim()) line += `, scoring ${c.score.trim()} overall`;
+      line += '.';
+      if(checkedTopics.length) line += ` Highlights: ${checkedTopics.join(', ')}.`;
+      return line;
+    })
+    .filter(Boolean);
 
   let body = `Hi ${parent}!\n\n`;
   body += `This is ${staff} with Mathnasium. ${student} recently took an assessment and I wanted to update you on ${pr.poss} progress.\n\n`;
-  if(prevPlan){
+  if(!preMode && prevPlan){
     body += `In the previous update we reported that ${student} had been working on ${pr.poss} ${prevPlan} lesson plan. `;
   }
-  body += `${scoreLine}${prevPlan ? '' : ''}\n\n`;
+  body += `${scoreLine}\n\n`;
   body += `I've attached a chart to this email which provides a skill-by-skill breakdown of ${pr.poss} assessment results.\n\n`;
 
-  if(improved.length){
+  if(preMode && mastery.length){
+    body += `${student[0].toUpperCase()+student.slice(1)} showed mastery of the following topics:\n\n`;
+    mastery.forEach(t=> body += `* ${t}\n`);
+    body += `\n`;
+  }
+  if(!preMode && improved.length){
     body += `Here are the topics in which ${pr.subj} improved:\n\n`;
     improved.forEach(t=> body += `* ${t}\n`);
     body += `\n`;
   }
-  if(newTopics.length){
+  if(!preMode && newTopics.length){
     body += `${student} has also moved up to a new level, so the assessment introduced some new topics ${pr.subj} ${pr.be} now being tested on:\n\n`;
     newTopics.forEach(t=> body += `* ${t}\n`);
+    body += `\n`;
+  }
+  if(extraNotes.length){
+    extraNotes.forEach(line=> body += `${line}\n`);
     body += `\n`;
   }
   if(planTopics.length){
