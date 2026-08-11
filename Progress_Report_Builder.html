@@ -1,0 +1,812 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Progress Report Builder — Mathnasium of West Linn</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<style>
+  /*
+    Palette pulled directly from the Mathnasium Brand Style Guide (2021):
+    Pantone 179 C  Mathnasium Red    #EF3E33
+    Pantone Black 6C Mathnasium Black #000000
+    Pantone 420 C  light grey        #C8C8C8
+    Cool Grey 7 C  mid grey          #929294
+    Pantone 395 C  yellow            #EBE70E
+    Pantone 7620 C maroon            #B5121B
+    Guide caps secondary colors at ~25% of a piece and explicitly disallows
+    gradients/shadows on brand elements — flat color throughout, by the book.
+  */
+  :root{
+    --red:#EF3E33;
+    --black:#000000;
+    --grey:#929294;
+    --grey-light:#C8C8C8;
+    --yellow:#EBE70E;
+    --maroon:#B5121B;
+    --paper:#ffffff;
+    --line:#e2e2e2;
+    --ink:#141414;
+    --ink-soft:#5c5c5c;
+    --up:#2f6b3f;
+    --up-bg:#eaf3ec;
+    --down:var(--maroon);
+    --down-bg:#faeceb;
+    --new-bg:#fffce8;
+    --new-ink:#7a7300;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:"Avenir Next","Avenir",-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+    line-height:1.45;
+    padding:0 0 80px 0;
+  }
+  .wrap{max-width:960px;margin:0 auto;padding:0 24px;}
+
+  header.top{
+    background:var(--black);
+    color:#fff;
+    padding:28px 0 24px 0;
+    border-bottom:5px solid var(--red);
+  }
+  .wordmark{
+    display:flex;align-items:baseline;gap:2px;
+    font-weight:800;font-size:22px;letter-spacing:.01em;margin-bottom:14px;
+  }
+  .wordmark .plus{color:var(--red);font-weight:800;}
+  .wordmark .sub{
+    font-weight:400;font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--grey-light);margin-left:8px;align-self:center;
+  }
+  header.top .eyebrow{
+    text-transform:uppercase;
+    letter-spacing:.14em;
+    font-size:11px;
+    color:var(--grey-light);
+    font-weight:600;
+  }
+  header.top h1{
+    font-size:26px;
+    margin:6px 0 6px 0;
+    font-weight:800;
+    letter-spacing:-.01em;
+  }
+  header.top p{
+    margin:0;
+    color:var(--grey-light);
+    font-size:14px;
+    max-width:640px;
+  }
+
+  .step{
+    background:var(--paper);
+    border:1px solid var(--line);
+    border-radius:8px;
+    margin-top:20px;
+    overflow:hidden;
+  }
+  .step-head{
+    display:flex;
+    align-items:center;
+    gap:12px;
+    padding:14px 20px;
+    border-bottom:1px solid var(--line);
+    background:#fafafa;
+  }
+  .step-num{
+    width:24px;height:24px;border-radius:50%;
+    background:var(--black);color:#fff;
+    display:flex;align-items:center;justify-content:center;
+    font-size:12.5px;font-weight:800;flex:none;
+  }
+  .step-head h2{
+    font-size:16px;margin:0;font-weight:750;letter-spacing:-.01em;
+  }
+  .step-head .hint{
+    margin-left:auto;font-size:12.5px;color:var(--ink-soft);
+  }
+  .step-body{padding:20px;}
+  .step-body p.desc{margin-top:0;color:var(--ink-soft);font-size:13.5px;}
+
+  .upload-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+  @media (max-width:640px){.upload-grid{grid-template-columns:1fr;}}
+  .drop{
+    border:1.5px dashed var(--grey-light);
+    border-radius:8px;
+    padding:20px 16px;
+    text-align:center;
+    background:#fafafa;
+    transition:border-color .15s, background .15s;
+    cursor:pointer;
+  }
+  .drop:hover{border-color:var(--red);background:#fff6f5;}
+  .drop.filled{border-style:solid;border-color:var(--up);background:var(--up-bg);}
+  .drop input{display:none;}
+  .drop .label{font-size:12.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-soft);font-weight:700;margin-bottom:6px;}
+  .drop .filename{font-size:13px;font-weight:600;word-break:break-word;}
+  .drop .sub{font-size:12px;color:var(--ink-soft);margin-top:4px;}
+
+  button{
+    font-family:inherit;
+    cursor:pointer;
+    border:none;
+    border-radius:7px;
+    padding:10px 18px;
+    font-size:13.5px;
+    font-weight:700;
+    letter-spacing:.01em;
+  }
+  .btn-primary{background:var(--red);color:#fff;}
+  .btn-primary:hover{background:var(--maroon);}
+  .btn-primary:disabled{background:var(--grey-light);color:#fff;cursor:not-allowed;}
+  .btn-secondary{background:#efefef;color:var(--ink);}
+  .btn-secondary:hover{background:#e4e4e4;}
+  .btn-ghost{background:transparent;color:var(--ink-soft);border:1px solid var(--line);}
+  .btn-ghost:hover{border-color:var(--ink-soft);}
+  .btn-sm{padding:5px 10px;font-size:12px;border-radius:5px;}
+  .btn-row{display:flex;gap:10px;margin-top:16px;align-items:center;flex-wrap:wrap;}
+
+  .status{font-size:12.5px;color:var(--ink-soft);}
+  .status.err{color:var(--down);font-weight:600;}
+  .status.ok{color:var(--up);font-weight:600;}
+
+  .meta-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;}
+  @media (max-width:700px){.meta-grid{grid-template-columns:1fr 1fr;}}
+  .field{display:flex;flex-direction:column;gap:5px;}
+  .field label{font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-soft);font-weight:700;}
+  .field input,.field select,.field textarea{
+    font-family:inherit;
+    font-size:14px;
+    padding:8px 10px;
+    border:1px solid var(--line);
+    border-radius:6px;
+    background:#fff;
+    color:var(--ink);
+  }
+  .field input:focus,.field select:focus,.field textarea:focus{outline:2px solid var(--red);outline-offset:0;border-color:var(--red);}
+
+  .score-chip{
+    display:inline-flex;align-items:baseline;gap:6px;
+    background:var(--black);color:#fff;border-radius:6px;
+    padding:8px 14px;font-weight:700;
+  }
+  .score-chip .arrow{color:var(--grey-light);font-weight:400;}
+  .score-chip .delta{padding:2px 8px;border-radius:10px;font-size:12px;font-weight:800;}
+  .delta.pos{background:var(--up);color:#fff;}
+  .delta.neg{background:var(--down);color:#fff;}
+  .delta.flat{background:var(--grey);color:#fff;}
+
+  table.results{width:100%;border-collapse:collapse;font-size:13.5px;}
+  table.results th{
+    text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.06em;
+    color:var(--ink-soft);padding:8px 6px;border-bottom:2px solid var(--line);
+  }
+  table.results td{padding:6px;border-bottom:1px solid #eee;vertical-align:middle;}
+  .cat-row td{
+    background:var(--black);color:#fff;font-weight:750;font-size:12.5px;
+    padding:8px 10px;border-radius:5px;
+  }
+  .cat-row{background:transparent;}
+  table.results input[type=text]{width:100%;border:1px solid transparent;background:transparent;font-size:13.5px;padding:4px 6px;border-radius:4px;font-family:inherit;}
+  table.results input[type=text]:hover{border-color:var(--line);}
+  table.results input[type=text]:focus{border-color:var(--red);outline:none;background:#fff;}
+  table.results input.num{width:56px;text-align:right;}
+  .pill{display:inline-block;padding:2px 7px;border-radius:10px;font-size:10.5px;font-weight:700;}
+  .pill.na{background:var(--new-bg);color:var(--new-ink);border:1px solid var(--yellow);}
+  .tag-del{color:var(--ink-soft);opacity:.6;background:none;border:none;cursor:pointer;font-size:14px;padding:2px 6px;}
+  .tag-del:hover{opacity:1;color:var(--down);}
+  .cat-add{margin:8px 0 18px 0;}
+  .cat-add button{margin-right:8px;}
+
+  textarea.plan{width:100%;min-height:110px;resize:vertical;font-family:inherit;font-size:14px;padding:10px;border:1px solid var(--line);border-radius:6px;}
+  textarea.email{width:100%;min-height:420px;resize:vertical;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px;line-height:1.6;padding:14px;border:1px solid var(--line);border-radius:6px;background:#fffdf9;}
+
+  .empty-note{color:var(--ink-soft);font-size:13px;font-style:italic;padding:14px 0;}
+  .copy-ok{color:var(--up);font-weight:700;font-size:12.5px;margin-left:10px;}
+  .footer-note{text-align:center;color:var(--ink-soft);font-size:11.5px;margin-top:26px;}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <div class="wordmark">M A<span class="plus">+</span>THNASIUM<span class="sub">West Linn · Staff Tool</span></div>
+    <h1>Progress Report Builder</h1>
+    <p>Upload two Radius assessment-chart PDFs (or one comparison chart), review the parsed scores, and draft a parent update email.</p>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <!-- STEP 1 -->
+  <div class="step">
+    <div class="step-head">
+      <div class="step-num">1</div>
+      <h2>Upload assessment charts</h2>
+      <div class="hint">PDF exports from Radius</div>
+    </div>
+    <div class="step-body">
+      <p class="desc">Upload <strong>one Comparison Chart</strong> (already has Pre/Post bars) in slot A, <em>or</em> two separate <strong>Assessment Charts</strong> — one in each slot. Slot order doesn't matter; the tool sorts by date automatically.</p>
+      <div class="upload-grid">
+        <label class="drop" id="dropA">
+          <div class="label">Slot A</div>
+          <div class="filename" id="fileNameA">Click to choose a PDF</div>
+          <div class="sub">Comparison chart, or one assessment chart</div>
+          <input type="file" id="fileA" accept="application/pdf">
+        </label>
+        <label class="drop" id="dropB">
+          <div class="label">Slot B (optional)</div>
+          <div class="filename" id="fileNameB">Click to choose a PDF</div>
+          <div class="sub">Second assessment chart, if comparing two</div>
+          <input type="file" id="fileB" accept="application/pdf">
+        </label>
+      </div>
+      <div class="btn-row">
+        <button class="btn-primary" id="parseBtn">Parse charts</button>
+        <button class="btn-ghost" id="manualBtn">Skip — build table manually</button>
+        <span class="status" id="parseStatus"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 2 -->
+  <div class="step" id="stepMeta" style="display:none;">
+    <div class="step-head">
+      <div class="step-num">2</div>
+      <h2>Student &amp; assessment details</h2>
+      <div class="hint">Edit anything that parsed wrong</div>
+    </div>
+    <div class="step-body">
+      <div class="meta-grid" style="margin-bottom:16px;">
+        <div class="field"><label>Student first name</label><input type="text" id="studentName"></div>
+        <div class="field"><label>Parent / guardian name</label><input type="text" id="parentName" placeholder="e.g. Kristine"></div>
+        <div class="field"><label>Pronoun</label>
+          <select id="pronoun">
+            <option value="they">they / them / their</option>
+            <option value="she">she / her / her</option>
+            <option value="he">he / him / his</option>
+          </select>
+        </div>
+        <div class="field"><label>Previous score</label><input type="text" id="prevScore" placeholder="e.g. 65%"></div>
+        <div class="field"><label>Previous date</label><input type="text" id="prevDate" placeholder="e.g. 5/27/2026"></div>
+        <div class="field"><label>Current score</label><input type="text" id="currScore" placeholder="e.g. 82%"></div>
+        <div class="field"><label>Current date</label><input type="text" id="currDate" placeholder="e.g. 8/5/2026"></div>
+        <div class="field"><label>Previous learning plan / level (optional)</label><input type="text" id="prevPlan" placeholder="e.g. Level 7"></div>
+        <div class="field"><label>Your name (sender)</label><input type="text" id="staffName" placeholder="e.g. Rebecca"></div>
+      </div>
+      <div id="scoreChipWrap"></div>
+    </div>
+  </div>
+
+  <!-- STEP 3 -->
+  <div class="step" id="stepTable" style="display:none;">
+    <div class="step-head">
+      <div class="step-num">3</div>
+      <h2>Review skill-by-skill results</h2>
+      <div class="hint">Check the boxes you want to mention in the email</div>
+    </div>
+    <div class="step-body">
+      <p class="desc">"Improved" is auto-checked where the score went up. "New at this level" is auto-checked for topics that only appear on the current assessment (grade-level-up case). Uncheck anything you don't want in the email, or edit any cell directly.</p>
+      <div id="tableHost"></div>
+      <div class="cat-add">
+        <button class="btn-secondary btn-sm" id="addCatBtn">+ Add category</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 4 -->
+  <div class="step" id="stepPlan" style="display:none;">
+    <div class="step-head">
+      <div class="step-num">4</div>
+      <h2>New learning plan topics</h2>
+      <div class="hint">Pulled by hand from Radius / the Learning Plan report</div>
+    </div>
+    <div class="step-body">
+      <p class="desc">One topic per line. These go in the "will be working on these topics" section of the email.</p>
+      <textarea class="plan" id="planTopics" placeholder="Exponents - Whole Number and Fraction Bases
+Problem Solving - Proportional Reasoning
+Integer Subtraction/Multiplication and Division with Two Numbers"></textarea>
+    </div>
+  </div>
+
+  <!-- STEP 5 -->
+  <div class="step" id="stepEmail" style="display:none;">
+    <div class="step-head">
+      <div class="step-num">5</div>
+      <h2>Drafted email</h2>
+      <div class="hint">Edit freely before sending</div>
+    </div>
+    <div class="step-body">
+      <div class="btn-row" style="margin-top:0;margin-bottom:14px;">
+        <button class="btn-primary" id="genBtn">Generate email</button>
+        <button class="btn-ghost" id="copyBtn">Copy to clipboard</button>
+        <span class="copy-ok" id="copyOk" style="display:none;">Copied!</span>
+      </div>
+      <textarea class="email" id="emailOut" placeholder="Click &quot;Generate email&quot; once your details and topics above look right."></textarea>
+    </div>
+  </div>
+
+  <div class="footer-note">Built for Mathnasium of West Linn — runs entirely in your browser, nothing is uploaded anywhere.</div>
+</div>
+
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+
+/* ---------------------------------------------------------
+   STATE
+--------------------------------------------------------- */
+let filesChosen = {A:null, B:null};
+let dataset = { studentName:'', prevScore:'', prevDate:'', currScore:'', currDate:'',
+                categories: [] }; // categories: [{name, topics:[{name, prev, curr}]}]
+let catCounter = 0;
+
+/* ---------------------------------------------------------
+   FILE PICKERS
+--------------------------------------------------------- */
+function wireDrop(slot){
+  const drop = document.getElementById('drop'+slot);
+  const input = document.getElementById('file'+slot);
+  const nameEl = document.getElementById('fileName'+slot);
+  drop.addEventListener('click', ()=>input.click());
+  input.addEventListener('change', ()=>{
+    if(input.files && input.files[0]){
+      filesChosen[slot] = input.files[0];
+      nameEl.textContent = input.files[0].name;
+      drop.classList.add('filled');
+    }
+  });
+}
+wireDrop('A'); wireDrop('B');
+
+document.getElementById('manualBtn').addEventListener('click', ()=>{
+  dataset = { studentName:'', prevScore:'', prevDate:'', currScore:'', currDate:'', categories: [] };
+  revealSteps();
+  renderMeta();
+  addCategory('New category');
+  renderTable();
+});
+
+/* ---------------------------------------------------------
+   PDF TEXT EXTRACTION -> ROWS (position based, mirrors the
+   Radius PDF layout: left column = skill numbers, middle =
+   topic name, right = percent bar/label)
+--------------------------------------------------------- */
+async function extractRowsFromPDF(file){
+  const buf = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({data:buf}).promise;
+  let allRows = [];
+  for(let p=1; p<=pdf.numPages; p++){
+    const page = await pdf.getPage(p);
+    const content = await page.getTextContent();
+    const items = content.items.map(it=>({
+      text: it.str,
+      x: it.transform[4],
+      y: it.transform[5]
+    })).filter(it=>it.text.trim().length>0);
+
+    // sort top-to-bottom (y descending in PDF space), then left-to-right
+    items.sort((a,b)=> b.y - a.y || a.x - b.x);
+
+    // cluster into rows by y proximity (tolerance covers wrapped skill-number lists
+    // that spill onto a slightly different y within the same visual row)
+    const TOL = 10;
+    let rows = [];
+    let current = [];
+    let currentY = null;
+    items.forEach(it=>{
+      if(currentY===null || Math.abs(it.y-currentY) <= TOL){
+        current.push(it);
+        currentY = current.reduce((s,i)=>s+i.y,0)/current.length; // running average
+      } else {
+        rows.push(current);
+        current = [it];
+        currentY = it.y;
+      }
+    });
+    if(current.length) rows.push(current);
+
+    // within each row, re-sort left to right (keep item-level x, not just joined text —
+    // needed downstream to separate the skill-number column from the topic-name column)
+    rows.forEach(r=> r.sort((a,b)=>a.x-b.x));
+
+    allRows = allRows.concat(rows);
+  }
+  return allRows; // array of rows; each row is an array of {text,x,y}
+}
+
+// Skill-number list column tops out well under this x; topic names / percents start after it.
+const NAME_COL_X = 115;
+
+function parseChart(rows){
+  const chart = { mode:null, studentName:'', checkup:'', scores:[], dates:[], categories:[] };
+  let currentCat = null;
+
+  const isFooter = t => /Mathnasium of West Linn|Page \d+ of \d+/i.test(t);
+  const isPureBracket = t => /^\(?[\d,\s]+\)?$/.test(t.trim());
+
+  rows.forEach(row=>{
+    const joined = row.map(i=>i.text).join(' ').replace(/\s+/g,' ').trim();
+    if(!joined || isFooter(joined)) return;
+
+    // header block: score/date tokens, possibly sharing a row with "Pre"/"Post" labels
+    if(chart.categories.length===0 && !chart.studentName){
+      const tokens = joined.split(/\s+/);
+      const headerish = tokens.length>0 && tokens.every(tok =>
+        /^(Pre|Post)$/i.test(tok) || /^\d{1,3}%$/.test(tok) || /^\d{1,2}\/\d{1,2}\/\d{4}$/.test(tok)
+      );
+      if(headerish){
+        tokens.forEach(tok=>{
+          if(/^\d{1,3}%$/.test(tok)) chart.scores.push(tok);
+          else if(/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(tok)) chart.dates.push(tok);
+        });
+        return;
+      }
+    }
+
+    const titleMatch = joined.match(/^(Comparison|Assessment)\s*Chart:\s*(.+)$/i);
+    if(titleMatch){
+      chart.mode = titleMatch[1].toLowerCase()==='comparison' ? 'comparison' : 'single';
+      chart.studentName = titleMatch[2].trim();
+      return;
+    }
+    if(/^Checkup/i.test(joined) || /Checkup #\d+ Assessment/i.test(joined)){
+      chart.checkup = joined;
+      return;
+    }
+    if(/^Percentage Point Change:/i.test(joined)) return; // recomputed, not needed verbatim
+
+    // topic row: find a %-token that sits in the name/percent column (x >= NAME_COL_X).
+    // Everything left of that column is the skill-number list — ignored regardless of
+    // how it wraps across lines, so wrapped numbers never leak into the topic name.
+    const pctItem = row.find(it => it.x >= NAME_COL_X && /^\d{1,3}%$/.test(it.text));
+    if(pctItem){
+      const nameItems = row.filter(it => it.x >= NAME_COL_X && it !== pctItem);
+      const name = nameItems.map(i=>i.text).join(' ').replace(/\s+/g,' ').trim();
+      if(!name) return;
+      if(!currentCat){ currentCat = {name:'General', topics:[]}; chart.categories.push(currentCat); }
+      currentCat.topics.push({name, percent: pctItem.text});
+      return;
+    }
+
+    // otherwise: category header, unless it's just a stray bracket continuation
+    if(isPureBracket(joined)) return;
+    currentCat = {name:joined, topics:[]};
+    chart.categories.push(currentCat);
+  });
+
+  return chart;
+}
+
+/* Merge a comparison-mode chart (topics appear twice: pre then post) into prev/curr pairs */
+function foldComparisonChart(chart){
+  const out = {studentName:chart.studentName, prevScore:chart.scores[0]||'', currScore:chart.scores[1]||'',
+               prevDate:chart.dates[0]||'', currDate:chart.dates[1]||'', categories:[]};
+  chart.categories.forEach(cat=>{
+    const topics=[];
+    for(let i=0;i<cat.topics.length;i++){
+      const a = cat.topics[i];
+      const b = cat.topics[i+1];
+      if(b && b.name===a.name){
+        topics.push({name:a.name, prev:a.percent, curr:b.percent});
+        i++;
+      } else {
+        topics.push({name:a.name, prev:null, curr:a.percent});
+      }
+    }
+    out.categories.push({name:cat.name, topics});
+  });
+  return out;
+}
+
+/* Merge two single-assessment charts (previous + current) by matching topic names */
+function mergeTwoCharts(prevChart, currChart){
+  const out = {studentName: currChart.studentName || prevChart.studentName,
+               prevScore: prevChart.scores[0]||'', currScore: currChart.scores[0]||'',
+               prevDate: prevChart.dates[0]||'', currDate: currChart.dates[0]||'',
+               categories:[]};
+
+  const prevFlat = new Map(); // name -> {percent, category}
+  prevChart.categories.forEach(cat=>cat.topics.forEach(t=>{
+    prevFlat.set(t.name.toLowerCase(), {percent:t.percent, category:cat.name, name:t.name});
+  }));
+  const used = new Set();
+
+  currChart.categories.forEach(cat=>{
+    const topics = cat.topics.map(t=>{
+      const key = t.name.toLowerCase();
+      const match = prevFlat.get(key);
+      if(match) used.add(key);
+      return {name:t.name, prev: match?match.percent:null, curr:t.percent};
+    });
+    out.categories.push({name:cat.name, topics});
+  });
+
+  // anything only in the previous chart -> append to its original category (or new one)
+  prevFlat.forEach((val,key)=>{
+    if(used.has(key)) return;
+    let cat = out.categories.find(c=>c.name===val.category);
+    if(!cat){ cat = {name:val.category, topics:[]}; out.categories.push(cat); }
+    cat.topics.push({name:val.name, prev:val.percent, curr:null});
+  });
+
+  return out;
+}
+
+/* ---------------------------------------------------------
+   PARSE BUTTON
+--------------------------------------------------------- */
+document.getElementById('parseBtn').addEventListener('click', async ()=>{
+  const statusEl = document.getElementById('parseStatus');
+  if(!filesChosen.A && !filesChosen.B){
+    statusEl.textContent = 'Choose at least one PDF first.';
+    statusEl.className = 'status err';
+    return;
+  }
+  statusEl.textContent = 'Reading PDF(s)...';
+  statusEl.className = 'status';
+  try{
+    let merged;
+    if(filesChosen.A && filesChosen.B){
+      const rowsA = await extractRowsFromPDF(filesChosen.A);
+      const rowsB = await extractRowsFromPDF(filesChosen.B);
+      const chartA = parseChart(rowsA);
+      const chartB = parseChart(rowsB);
+      // order by date
+      const toDate = s => { const m=(s||'').match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/); return m? new Date(+m[3],+m[1]-1,+m[2]) : new Date(0); };
+      const dA = toDate(chartA.dates[0]), dB = toDate(chartB.dates[0]);
+      const prevChart = dA<=dB ? chartA : chartB;
+      const currChart = dA<=dB ? chartB : chartA;
+      merged = mergeTwoCharts(prevChart, currChart);
+    } else {
+      const only = filesChosen.A || filesChosen.B;
+      const rows = await extractRowsFromPDF(only);
+      const chart = parseChart(rows);
+      if(chart.mode==='comparison'){
+        merged = foldComparisonChart(chart);
+      } else {
+        // single assessment only, no comparison available
+        merged = {studentName:chart.studentName, prevScore:'', prevDate:'',
+                   currScore:chart.scores[0]||'', currDate:chart.dates[0]||'',
+                   categories: chart.categories.map(c=>({name:c.name, topics:c.topics.map(t=>({name:t.name, prev:null, curr:t.percent}))}))};
+      }
+    }
+    dataset = merged;
+    statusEl.textContent = 'Parsed. Review the details below — fix anything that looks off.';
+    statusEl.className = 'status ok';
+    revealSteps();
+    renderMeta();
+    renderTable();
+  } catch(e){
+    console.error(e);
+    statusEl.textContent = 'Could not parse that PDF automatically. Use "build table manually" instead, or try re-exporting from Radius.';
+    statusEl.className = 'status err';
+  }
+});
+
+function revealSteps(){
+  document.getElementById('stepMeta').style.display='block';
+  document.getElementById('stepTable').style.display='block';
+  document.getElementById('stepPlan').style.display='block';
+  document.getElementById('stepEmail').style.display='block';
+}
+
+/* ---------------------------------------------------------
+   RENDER META
+--------------------------------------------------------- */
+function renderMeta(){
+  document.getElementById('studentName').value = dataset.studentName || '';
+  document.getElementById('prevScore').value = dataset.prevScore || '';
+  document.getElementById('prevDate').value = dataset.prevDate || '';
+  document.getElementById('currScore').value = dataset.currScore || '';
+  document.getElementById('currDate').value = dataset.currDate || '';
+  updateScoreChip();
+  ['studentName','prevScore','prevDate','currScore','currDate'].forEach(id=>{
+    document.getElementById(id).oninput = ()=>{
+      dataset[id] = document.getElementById(id).value;
+      updateScoreChip();
+    };
+  });
+}
+
+function updateScoreChip(){
+  const wrap = document.getElementById('scoreChipWrap');
+  const pv = parseFloat(dataset.prevScore);
+  const cv = parseFloat(dataset.currScore);
+  if(isNaN(pv) && isNaN(cv)){ wrap.innerHTML=''; return; }
+  let deltaHtml = '';
+  if(!isNaN(pv) && !isNaN(cv)){
+    const d = Math.round((cv-pv)*10)/10;
+    const cls = d>0?'pos':(d<0?'neg':'flat');
+    deltaHtml = `<span class="delta ${cls}">${d>0?'+':''}${d}%-pt</span>`;
+  }
+  wrap.innerHTML = `<div class="score-chip">
+    <span>${isNaN(pv)?'—':dataset.prevScore}</span><span class="arrow">→</span>
+    <span>${isNaN(cv)?'—':dataset.currScore}</span> ${deltaHtml}
+  </div>`;
+}
+
+/* ---------------------------------------------------------
+   RENDER TABLE
+--------------------------------------------------------- */
+function renderTable(){
+  const host = document.getElementById('tableHost');
+  if(!dataset.categories.length){
+    host.innerHTML = '<div class="empty-note">No categories yet — add one below.</div>';
+    return;
+  }
+  let html = `<table class="results"><thead><tr>
+    <th style="width:28px;"></th>
+    <th>Topic</th><th style="width:70px;">Prev</th><th style="width:70px;">Current</th>
+    <th style="width:60px;">Δ</th><th style="width:90px;">Improved?</th><th style="width:90px;">New?</th><th></th>
+  </tr></thead><tbody>`;
+
+  dataset.categories.forEach((cat, ci)=>{
+    html += `<tr class="cat-row"><td colspan="8"><div class="cat-row" style="display:flex;justify-content:space-between;align-items:center;">
+      <input type="text" value="${escapeAttr(cat.name)}" data-cat="${ci}" class="catNameInput" style="background:transparent;border:none;color:#fff;font-weight:750;font-size:12.5px;width:60%;">
+      <span>
+        <button class="btn-ghost btn-sm addRowBtn" data-cat="${ci}" style="color:#fff;border-color:rgba(255,255,255,.4);">+ topic</button>
+        <button class="tag-del delCatBtn" data-cat="${ci}" style="color:#fff;" title="Delete category">✕</button>
+      </span>
+    </div></td></tr>`;
+
+    cat.topics.forEach((t, ti)=>{
+      const pv = t.prev!==null ? parseFloat(t.prev) : null;
+      const cv = t.curr!==null ? parseFloat(t.curr) : null;
+      let deltaText = '—', deltaCls='flat', improvedChecked=false, isNew=false, isRetired=false;
+      if(pv!==null && cv!==null){
+        const d = Math.round((cv-pv)*10)/10;
+        deltaText = (d>0?'+':'')+d+'%';
+        deltaCls = d>0?'pos':(d<0?'neg':'flat');
+        improvedChecked = d>0;
+      } else if(pv===null && cv!==null){
+        deltaText = '<span class="pill na">new</span>'; isNew=true;
+      } else if(pv!==null && cv===null){
+        deltaText = '<span class="pill na">retired</span>'; isRetired=true;
+      }
+      const rowId = `${ci}_${ti}`;
+      html += `<tr data-row="${rowId}">
+        <td></td>
+        <td><input type="text" class="topicName" data-row="${rowId}" value="${escapeAttr(t.name)}"></td>
+        <td><input type="text" class="num prevVal" data-row="${rowId}" value="${t.prev!==null?escapeAttr(t.prev):''}" placeholder="—"></td>
+        <td><input type="text" class="num currVal" data-row="${rowId}" value="${t.curr!==null?escapeAttr(t.curr):''}" placeholder="—"></td>
+        <td>${deltaText}</td>
+        <td style="text-align:center;"><input type="checkbox" class="improveChk" data-row="${rowId}" ${improvedChecked?'checked':''} ${(pv===null||cv===null)?'disabled':''}></td>
+        <td style="text-align:center;"><input type="checkbox" class="newChk" data-row="${rowId}" ${isNew?'checked':''} ${!isNew?'disabled':''}></td>
+        <td><button class="tag-del delRowBtn" data-row="${rowId}" title="Delete row">✕</button></td>
+      </tr>`;
+    });
+  });
+  html += '</tbody></table>';
+  host.innerHTML = html;
+
+  // wire events
+  host.querySelectorAll('.catNameInput').forEach(el=>el.addEventListener('input', e=>{
+    dataset.categories[+e.target.dataset.cat].name = e.target.value;
+  }));
+  host.querySelectorAll('.delCatBtn').forEach(el=>el.addEventListener('click', e=>{
+    dataset.categories.splice(+e.target.dataset.cat,1); renderTable();
+  }));
+  host.querySelectorAll('.addRowBtn').forEach(el=>el.addEventListener('click', e=>{
+    dataset.categories[+e.target.dataset.cat].topics.push({name:'New topic', prev:null, curr:null});
+    renderTable();
+  }));
+  host.querySelectorAll('.delRowBtn').forEach(el=>el.addEventListener('click', e=>{
+    const [ci,ti] = e.target.dataset.row.split('_').map(Number);
+    dataset.categories[ci].topics.splice(ti,1); renderTable();
+  }));
+  host.querySelectorAll('.topicName').forEach(el=>el.addEventListener('input', e=>{
+    const [ci,ti] = e.target.dataset.row.split('_').map(Number);
+    dataset.categories[ci].topics[ti].name = e.target.value;
+  }));
+  host.querySelectorAll('.prevVal').forEach(el=>el.addEventListener('input', e=>{
+    const [ci,ti] = e.target.dataset.row.split('_').map(Number);
+    dataset.categories[ci].topics[ti].prev = e.target.value || null;
+    renderTable();
+  }));
+  host.querySelectorAll('.currVal').forEach(el=>el.addEventListener('input', e=>{
+    const [ci,ti] = e.target.dataset.row.split('_').map(Number);
+    dataset.categories[ci].topics[ti].curr = e.target.value || null;
+    renderTable();
+  }));
+}
+
+document.getElementById('addCatBtn').addEventListener('click', ()=>{
+  addCategory('New category');
+  renderTable();
+});
+function addCategory(name){
+  dataset.categories = dataset.categories || [];
+  dataset.categories.push({name, topics:[{name:'New topic', prev:null, curr:null}]});
+}
+
+function escapeAttr(s){
+  return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+}
+
+/* ---------------------------------------------------------
+   EMAIL GENERATION
+--------------------------------------------------------- */
+function pronounSet(p){
+  if(p==='she') return {subj:'she',obj:'her',poss:'her',be:'is'};
+  if(p==='he') return {subj:'he',obj:'him',poss:'his',be:'is'};
+  return {subj:'they',obj:'them',poss:'their',be:'are'};
+}
+
+document.getElementById('genBtn').addEventListener('click', ()=>{
+  const student = document.getElementById('studentName').value.trim() || 'the student';
+  const parent = document.getElementById('parentName').value.trim() || 'there';
+  const staff = document.getElementById('staffName').value.trim() || '[Your name]';
+  const pr = pronounSet(document.getElementById('pronoun').value);
+  const prevPlan = document.getElementById('prevPlan').value.trim();
+  const currScore = dataset.currScore || document.getElementById('currScore').value.trim();
+  const prevScore = dataset.prevScore || document.getElementById('prevScore').value.trim();
+
+  const pv = parseFloat(prevScore), cv = parseFloat(currScore);
+  let scoreLine = '';
+  if(!isNaN(pv) && !isNaN(cv)){
+    const d = Math.round((cv-pv)*10)/10;
+    if(d>0) scoreLine = `On ${pr.poss} most recent attempt, ${pr.subj} improved ${pr.poss} score by ${d}%-points, scoring ${currScore} overall.`;
+    else if(d<0) scoreLine = `On ${pr.poss} most recent attempt, ${pr.subj} scored ${currScore} overall.`;
+    else scoreLine = `On ${pr.poss} most recent attempt, ${pr.subj} held steady, scoring ${currScore} overall.`;
+  } else if(!isNaN(cv)){
+    scoreLine = `${student} scored ${currScore} overall on this assessment.`;
+  }
+
+  const improved = [];
+  const newTopics = [];
+  document.querySelectorAll('.improveChk').forEach(cb=>{
+    if(cb.checked){
+      const [ci,ti] = cb.dataset.row.split('_').map(Number);
+      improved.push(dataset.categories[ci].topics[ti].name);
+    }
+  });
+  document.querySelectorAll('.newChk').forEach(cb=>{
+    if(cb.checked){
+      const [ci,ti] = cb.dataset.row.split('_').map(Number);
+      newTopics.push(dataset.categories[ci].topics[ti].name);
+    }
+  });
+  const planTopics = document.getElementById('planTopics').value.split('\n').map(s=>s.trim()).filter(Boolean);
+
+  let body = `Hi ${parent}!\n\n`;
+  body += `This is ${staff} with Mathnasium. ${student} recently took an assessment and I wanted to update you on ${pr.poss} progress.\n\n`;
+  if(prevPlan){
+    body += `In the previous update we reported that ${student} had been working on ${pr.poss} ${prevPlan} lesson plan. `;
+  }
+  body += `${scoreLine}${prevPlan ? '' : ''}\n\n`;
+  body += `I've attached a chart to this email which provides a skill-by-skill breakdown of ${pr.poss} assessment results.\n\n`;
+
+  if(improved.length){
+    body += `Here are the topics in which ${pr.subj} improved:\n\n`;
+    improved.forEach(t=> body += `* ${t}\n`);
+    body += `\n`;
+  }
+  if(newTopics.length){
+    body += `${student} has also moved up to a new level, so the assessment introduced some new topics ${pr.subj} ${pr.be} now being tested on:\n\n`;
+    newTopics.forEach(t=> body += `* ${t}\n`);
+    body += `\n`;
+  }
+  if(planTopics.length){
+    body += `We've created an updated lesson plan based on ${pr.poss} most recent results. ${pr.subj[0].toUpperCase()+pr.subj.slice(1)} will be working on these topics:\n\n`;
+    planTopics.forEach(t=> body += `* ${t}\n`);
+    body += `\n`;
+  }
+  body += `Built into ${pr.poss} next learning plan is a checkpoint at which ${pr.subj} will be reassessed and another update will be sent out. As always, please let us know if you have any questions, comments, or concerns. Thank you, ${parent}!\n\n`;
+  body += `Best,\n${staff}\nMathnasium of West Linn`;
+
+  document.getElementById('emailOut').value = body;
+});
+
+document.getElementById('copyBtn').addEventListener('click', ()=>{
+  const ta = document.getElementById('emailOut');
+  ta.select();
+  document.execCommand('copy');
+  const ok = document.getElementById('copyOk');
+  ok.style.display = 'inline';
+  setTimeout(()=>ok.style.display='none', 1600);
+});
+</script>
+</body>
+</html>
