@@ -206,6 +206,45 @@
   .empty-note{color:var(--ink-soft);font-size:13px;font-style:italic;padding:14px 0;}
   .copy-ok{color:var(--up);font-weight:700;font-size:12.5px;margin-left:10px;}
   .footer-note{text-align:center;color:var(--ink-soft);font-size:11.5px;margin-top:26px;}
+
+  .howto{
+    background:#fafafa;
+    border:1px solid var(--line);
+    border-left:4px solid var(--red);
+    border-radius:8px;
+    margin-top:20px;
+    overflow:hidden;
+  }
+  .howto summary{
+    padding:14px 18px;
+    font-weight:750;
+    font-size:14.5px;
+    cursor:pointer;
+    list-style:none;
+    display:flex;
+    align-items:center;
+    gap:8px;
+  }
+  .howto summary::-webkit-details-marker{display:none;}
+  .howto summary::before{
+    content:'▸';
+    color:var(--red);
+    font-size:12px;
+    transition:transform .12s;
+  }
+  .howto[open] summary::before{transform:rotate(90deg);}
+  .howto .howto-body{padding:0 18px 16px 18px;font-size:13.5px;color:var(--ink);}
+  .howto .howto-body p{margin:0 0 10px 0;}
+  .howto .howto-body ul{margin:0 0 10px 0;padding-left:20px;}
+  .howto .howto-body li{margin-bottom:6px;}
+  .howto .howto-body strong{color:var(--red);}
+  .howto .howto-body .pull-note{
+    background:#fff;
+    border:1px solid var(--line);
+    border-radius:6px;
+    padding:10px 12px;
+    font-size:13px;
+  }
 </style>
 </head>
 <body>
@@ -220,11 +259,28 @@
 
 <div class="wrap">
 
+  <details class="howto" open>
+    <summary>How to use this page</summary>
+    <div class="howto-body">
+      <div class="pull-note">
+        Use the <strong>Report</strong> button on the student's details page in Radius to pull assessment reports. Leave <strong>Expected Timeline</strong> unchecked, then click <strong>Preview</strong> to download the PDF. (Also double-check <strong>Results Display Format</strong> is set to <strong>Fraction</strong> — that's what this tool reads.)
+      </div>
+      <p style="margin-top:12px;">Quick rundown:</p>
+      <ul>
+        <li>Upload all assessment reports.</li>
+        <li>Check the student details.</li>
+        <li>Review the parsed scores and adjust as necessary.</li>
+        <li>Fill in the new learning plan topics by hand.</li>
+        <li>Generate the email.</li>
+      </ul>
+    </div>
+  </details>
+
   <!-- STEP 1 -->
   <div class="step">
     <div class="step-head">
       <div class="step-num">1</div>
-      <h2>Upload assessment charts</h2>
+      <h2>Upload assessments</h2>
       <div class="hint">PDF exports from Radius</div>
     </div>
     <div class="step-body">
@@ -247,6 +303,22 @@
         <button class="btn-primary" id="parseBtn">Parse charts</button>
         <button class="btn-ghost" id="manualBtn">Skip — build table manually</button>
         <span class="status" id="parseStatus"></span>
+      </div>
+
+      <hr style="border:none;border-top:1px solid var(--line);margin:22px 0;">
+
+      <h3 style="margin:0 0 6px 0;font-size:14.5px;">Additional assessments <span style="font-weight:400;color:var(--ink-soft);">(optional)</span></h3>
+      <p class="desc">For assessments outside the main skill chart — Numerical Fluency is the common one. Upload its PDF if it uses the same Radius chart layout, or just fill in the summary by hand. These parse on upload automatically, no separate button needed.</p>
+      <div id="extraHost"></div>
+      <datalist id="assessmentPresets">
+        <option value="Numerical Fluency - Addition and Subtraction">
+        <option value="Numerical Fluency - Multiplication and Division">
+        <option value="Geometry Extension Assessment">
+        <option value="Computation Assessment (5th-8th)">
+        <option value="High School Fundamental Skills (9th-12th)">
+      </datalist>
+      <div class="cat-add">
+        <button class="btn-secondary btn-sm" id="addExtraBtn">+ Add another assessment</button>
       </div>
     </div>
   </div>
@@ -302,32 +374,9 @@
   </div>
 
   <!-- STEP 4 -->
-  <div class="step" id="stepExtra" style="display:none;">
-    <div class="step-head">
-      <div class="step-num">4</div>
-      <h2>Additional assessments <span style="font-weight:400;color:var(--ink-soft);">(optional)</span></h2>
-      <div class="hint">Numerical Fluency, etc.</div>
-    </div>
-    <div class="step-body">
-      <p class="desc">For assessments outside the main skill chart — Numerical Fluency is the common one. Upload its PDF if it uses the same Radius chart layout, or just fill in the summary by hand.</p>
-      <div id="extraHost"></div>
-      <datalist id="assessmentPresets">
-        <option value="Numerical Fluency - Addition and Subtraction">
-        <option value="Numerical Fluency - Multiplication and Division">
-        <option value="Geometry Extension Assessment">
-        <option value="Computation Assessment (5th-8th)">
-        <option value="High School Fundamental Skills (9th-12th)">
-      </datalist>
-      <div class="cat-add">
-        <button class="btn-secondary btn-sm" id="addExtraBtn">+ Add another assessment</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- STEP 5 -->
   <div class="step" id="stepPlan" style="display:none;">
     <div class="step-head">
-      <div class="step-num">5</div>
+      <div class="step-num">4</div>
       <h2>New learning plan topics</h2>
       <div class="hint">Pulled by hand from Radius / the Learning Plan report</div>
     </div>
@@ -339,10 +388,10 @@ Integer Subtraction/Multiplication and Division with Two Numbers"></textarea>
     </div>
   </div>
 
-  <!-- STEP 6 -->
+  <!-- STEP 5 -->
   <div class="step" id="stepEmail" style="display:none;">
     <div class="step-head">
-      <div class="step-num">6</div>
+      <div class="step-num">5</div>
       <h2>Drafted email</h2>
       <div class="hint">Edit freely before sending</div>
     </div>
@@ -683,11 +732,8 @@ document.getElementById('parseBtn').addEventListener('click', async ()=>{
 function revealSteps(){
   document.getElementById('stepMeta').style.display='block';
   document.getElementById('stepTable').style.display='block';
-  document.getElementById('stepExtra').style.display='block';
   document.getElementById('stepPlan').style.display='block';
   document.getElementById('stepEmail').style.display='block';
-  if(!extraCharts.length) addExtraCard();
-  renderExtra();
 }
 
 /* ---------------------------------------------------------
@@ -845,19 +891,35 @@ function addCategory(name){
 
 /* ---------------------------------------------------------
    ADDITIONAL ASSESSMENTS (Numerical Fluency, etc.)
+   Each card supports a single snapshot (curr only) or a
+   before/after comparison (prev + curr) when a "previous
+   report" PDF is also supplied — same idea as the main
+   chart's prev/curr comparison, just for the narrative
+   report format.
 --------------------------------------------------------- */
-let extraCharts = []; // [{id, label, score, topics:[{name,curr,checked}]}]
+let extraCharts = []; // [{id, label, prevScore, score, prevDate, currDate, topics:[{name,prev,curr,checked}]}]
 let extraCounter = 0;
 
 function addExtraCard(){
   extraCounter++;
-  extraCharts.push({id:extraCounter, label: extraCharts.length===0 ? 'Numerical Fluency Assessment' : 'Additional Assessment', score:'', topics:[]});
+  extraCharts.push({id:extraCounter, label: extraCharts.length===0 ? 'Numerical Fluency Assessment' : 'Additional Assessment', prevScore:'', score:'', topics:[]});
 }
 
 document.getElementById('addExtraBtn').addEventListener('click', ()=>{
   addExtraCard();
   renderExtra();
 });
+
+// Additional assessments are available immediately on page load, no need to
+// wait on parsing the main chart first.
+addExtraCard();
+renderExtra();
+
+function fracToPct(s){
+  const m = (s||'').match(/(\d+)\s*\/\s*(\d+)/);
+  if(!m) return null;
+  return (parseFloat(m[1])/parseFloat(m[2]))*100;
+}
 
 function renderExtra(){
   const host = document.getElementById('extraHost');
@@ -867,6 +929,7 @@ function renderExtra(){
   }
   let html = '';
   extraCharts.forEach(card=>{
+    const hasComparison = card.topics.some(t=>t.prev);
     html += `<div class="step" style="margin-top:14px;border-color:var(--line);">
       <div class="step-body" style="padding:14px 16px;">
         <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-bottom:12px;">
@@ -874,24 +937,41 @@ function renderExtra(){
             <label>Assessment name</label>
             <input type="text" class="extraLabel" data-id="${card.id}" value="${escapeAttr(card.label)}" list="assessmentPresets">
           </div>
-          <div class="field" style="width:120px;">
-            <label>Overall score</label>
-            <input type="text" class="extraScore" data-id="${card.id}" value="${escapeAttr(card.score)}" placeholder="e.g. 88%">
+          <div class="field" style="width:110px;">
+            <label>Previous score</label>
+            <input type="text" class="extraPrevScore" data-id="${card.id}" value="${escapeAttr(card.prevScore)}" placeholder="e.g. 7/9">
           </div>
-          <div class="field" style="width:auto;">
-            <label style="visibility:hidden;">up</label>
-            <input type="file" accept="application/pdf" class="extraFile" data-id="${card.id}" style="font-size:12px;max-width:170px;">
+          <div class="field" style="width:110px;">
+            <label>Current score</label>
+            <input type="text" class="extraScore" data-id="${card.id}" value="${escapeAttr(card.score)}" placeholder="e.g. 9/9">
           </div>
           <button class="tag-del delExtraBtn" data-id="${card.id}" title="Remove this assessment" style="margin-bottom:8px;">✕ Remove</button>
         </div>
+        <div class="upload-grid" style="margin-bottom:10px;">
+          <label class="drop" style="padding:10px;">
+            <div class="sub" style="margin-top:0;">Current report PDF</div>
+            <input type="file" accept="application/pdf" class="extraFile" data-id="${card.id}">
+          </label>
+          <label class="drop" style="padding:10px;">
+            <div class="sub" style="margin-top:0;">Previous report PDF (optional — for a comparison email)</div>
+            <input type="file" accept="application/pdf" class="extraFilePrev" data-id="${card.id}">
+          </label>
+        </div>
         <div class="extraStatus status" data-id="${card.id}"></div>
         <table class="results" style="margin-top:8px;">
-          <thead><tr><th>Topic / note</th><th style="width:70px;">Score</th><th style="width:70px;">Mention?</th><th></th></tr></thead>
+          <thead><tr>
+            <th>Topic / note</th>
+            ${hasComparison ? `<th style="width:70px;">Prev</th><th style="width:70px;">Curr</th>` : `<th style="width:70px;">Score</th>`}
+            <th style="width:70px;">Mention?</th><th></th>
+          </tr></thead>
           <tbody>
           ${card.topics.map((t,ti)=>`
             <tr>
               <td><input type="text" class="extraTopicName" data-id="${card.id}" data-ti="${ti}" value="${escapeAttr(t.name)}"></td>
-              <td><input type="text" class="num extraTopicScore" data-id="${card.id}" data-ti="${ti}" value="${escapeAttr(t.curr||'')}" placeholder="—"></td>
+              ${hasComparison
+                ? `<td><input type="text" class="num extraTopicPrev" data-id="${card.id}" data-ti="${ti}" value="${escapeAttr(t.prev||'')}" placeholder="—"></td>
+                   <td><input type="text" class="num extraTopicScore" data-id="${card.id}" data-ti="${ti}" value="${escapeAttr(t.curr||'')}" placeholder="—"></td>`
+                : `<td><input type="text" class="num extraTopicScore" data-id="${card.id}" data-ti="${ti}" value="${escapeAttr(t.curr||'')}" placeholder="—"></td>`}
               <td style="text-align:center;"><input type="checkbox" class="extraTopicChk" data-id="${card.id}" data-ti="${ti}" ${t.checked?'checked':''}></td>
               <td><button class="tag-del extraDelRow" data-id="${card.id}" data-ti="${ti}">✕</button></td>
             </tr>`).join('')}
@@ -911,6 +991,10 @@ function renderExtra(){
     const card = extraCharts.find(c=>c.id===+e.target.dataset.id);
     card.score = e.target.value;
   }));
+  host.querySelectorAll('.extraPrevScore').forEach(el=>el.addEventListener('input', e=>{
+    const card = extraCharts.find(c=>c.id===+e.target.dataset.id);
+    card.prevScore = e.target.value;
+  }));
   host.querySelectorAll('.delExtraBtn').forEach(el=>el.addEventListener('click', e=>{
     extraCharts = extraCharts.filter(c=>c.id!==+e.target.dataset.id);
     renderExtra();
@@ -922,6 +1006,10 @@ function renderExtra(){
   host.querySelectorAll('.extraTopicScore').forEach(el=>el.addEventListener('input', e=>{
     const card = extraCharts.find(c=>c.id===+e.target.dataset.id);
     card.topics[+e.target.dataset.ti].curr = e.target.value;
+  }));
+  host.querySelectorAll('.extraTopicPrev').forEach(el=>el.addEventListener('input', e=>{
+    const card = extraCharts.find(c=>c.id===+e.target.dataset.id);
+    card.topics[+e.target.dataset.ti].prev = e.target.value;
   }));
   host.querySelectorAll('.extraTopicChk').forEach(el=>el.addEventListener('change', e=>{
     const card = extraCharts.find(c=>c.id===+e.target.dataset.id);
@@ -935,50 +1023,38 @@ function renderExtra(){
   extraCharts.forEach(card=>{
     const btn = document.getElementById('extraAddRow_'+card.id);
     if(btn) btn.addEventListener('click', ()=>{
-      card.topics.push({name:'', curr:'', checked:true});
+      card.topics.push({name:'', curr:'', prev:'', checked:true});
       renderExtra();
     });
   });
+
+  // CURRENT report upload
   host.querySelectorAll('.extraFile').forEach(el=>el.addEventListener('change', async e=>{
     const card = extraCharts.find(c=>c.id===+e.target.dataset.id);
     const statusEl = host.querySelector(`.extraStatus[data-id="${card.id}"]`);
     const file = e.target.files[0];
     if(!file) return;
-    statusEl.textContent = 'Reading PDF...';
+    statusEl.textContent = 'Reading current report...';
     statusEl.className = 'status';
     try{
-      const rows = await extractRowsFromPDF(file);
-
-      // try the percentage-bar chart layout first (grade-level style charts,
-      // which Geometry Extension / Computation / HS Fundamentals also use)
-      const chart = parseChart(rows);
-      const topics = [];
-      chart.categories.forEach(cat=>cat.topics.forEach(t=>topics.push({name:t.name, curr:t.percent, checked:true})));
-
-      if(topics.length){
-        card.topics = topics;
-        if(chart.scores[0]) card.score = chart.scores[0];
-        if(chart.studentName && !document.getElementById('studentName').value){
-          document.getElementById('studentName').value = chart.studentName;
-        }
-        statusEl.textContent = `Parsed ${topics.length} row(s) — review below.`;
-        statusEl.className = 'status ok';
+      const parsed = await parseNarrativeOrChart(file);
+      if(!parsed){
+        statusEl.textContent = 'Could not auto-read that PDF (this happens with the raw checkbox-style Numerical Fluency checkup — the checkmarks are images, not text). Add the score/notes by hand below instead.';
+        statusEl.className = 'status err';
       } else {
-        // fall back to the narrative "Assessment Report" / "Mastery Report" layout
-        // (the format Numerical Fluency results typically come in)
-        const narrative = parseNarrativeReport(rows);
-        if(narrative && narrative.categories.length){
-          card.topics = narrative.categories.map(c => ({name:c.name, curr:`${c.num}/${c.den}`, checked:true}));
-          if(narrative.overall) card.score = `${narrative.overall.num}/${narrative.overall.den} (${narrative.overall.pct}%)`;
-          if(narrative.studentName && !document.getElementById('studentName').value){
-            document.getElementById('studentName').value = narrative.studentName;
-          }
-          statusEl.textContent = `Parsed ${narrative.categories.length} row(s) from the report — review below.`;
-          statusEl.className = 'status ok';
-        } else {
-          statusEl.textContent = 'Could not auto-read that PDF (this happens with the raw checkbox-style Numerical Fluency checkup — the checkmarks are images, not text). Add the score/notes by hand below instead.';
-          statusEl.className = 'status err';
+        // merge into existing topics by name, preserving any prev values already present
+        const existingByName = new Map(card.topics.map(t=>[t.name.toLowerCase(), t]));
+        const newTopics = parsed.topics.map(nt=>{
+          const existing = existingByName.get(nt.name.toLowerCase());
+          return {name:nt.name, curr:nt.value, prev: existing ? existing.prev : '', checked:true};
+        });
+        card.topics = newTopics;
+        if(parsed.overall) card.score = parsed.overall;
+        if(parsed.studentName && !document.getElementById('studentName').value){
+          document.getElementById('studentName').value = parsed.studentName;
         }
+        statusEl.textContent = `Parsed ${parsed.topics.length} row(s) — review below.`;
+        statusEl.className = 'status ok';
       }
       renderExtra();
     } catch(err){
@@ -987,6 +1063,67 @@ function renderExtra(){
       statusEl.className = 'status err';
     }
   }));
+
+  // PREVIOUS report upload (comparison)
+  host.querySelectorAll('.extraFilePrev').forEach(el=>el.addEventListener('change', async e=>{
+    const card = extraCharts.find(c=>c.id===+e.target.dataset.id);
+    const statusEl = host.querySelector(`.extraStatus[data-id="${card.id}"]`);
+    const file = e.target.files[0];
+    if(!file) return;
+    statusEl.textContent = 'Reading previous report...';
+    statusEl.className = 'status';
+    try{
+      const parsed = await parseNarrativeOrChart(file);
+      if(!parsed){
+        statusEl.textContent = 'Could not auto-read that previous-report PDF — fill in the "Prev" column by hand instead.';
+        statusEl.className = 'status err';
+      } else {
+        if(parsed.overall) card.prevScore = parsed.overall;
+        const prevByName = new Map(parsed.topics.map(t=>[t.name.toLowerCase(), t.value]));
+        const usedNames = new Set();
+        card.topics.forEach(t=>{
+          const key = t.name.toLowerCase();
+          if(prevByName.has(key)){ t.prev = prevByName.get(key); usedNames.add(key); }
+        });
+        // any previous-only categories (e.g. an assessment not retested this time) get appended
+        parsed.topics.forEach(t=>{
+          if(!usedNames.has(t.name.toLowerCase())){
+            card.topics.push({name:t.name, prev:t.value, curr:'', checked:false});
+          }
+        });
+        statusEl.textContent = `Matched ${usedNames.size} topic(s) to the current report — review below.`;
+        statusEl.className = 'status ok';
+      }
+      renderExtra();
+    } catch(err){
+      console.error(err);
+      statusEl.textContent = 'Could not parse that PDF — fill in the "Prev" column by hand instead.';
+      statusEl.className = 'status err';
+    }
+  }));
+}
+
+/* Try the percentage-bar chart layout first, then the narrative report layout.
+   Returns {studentName, overall, topics:[{name,value}]} or null if neither matched. */
+async function parseNarrativeOrChart(file){
+  const rows = await extractRowsFromPDF(file);
+
+  const chart = parseChart(rows);
+  const chartTopics = [];
+  chart.categories.forEach(cat=>cat.topics.forEach(t=>chartTopics.push({name:t.name, value:t.percent})));
+  if(chartTopics.length){
+    return {studentName:chart.studentName, overall:chart.scores[0]||'', topics:chartTopics};
+  }
+
+  const narrative = parseNarrativeReport(rows);
+  if(narrative && narrative.categories.length){
+    return {
+      studentName: narrative.studentName,
+      overall: narrative.overall ? `${narrative.overall.num}/${narrative.overall.den} (${narrative.overall.pct}%)` : '',
+      topics: narrative.categories.map(c=>({name:c.name, value:`${c.num}/${c.den}`}))
+    };
+  }
+  return null;
 }
 
 function escapeAttr(s){
@@ -1048,16 +1185,32 @@ document.getElementById('genBtn').addEventListener('click', ()=>{
   });
   const planTopics = document.getElementById('planTopics').value.split('\n').map(s=>s.trim()).filter(Boolean);
 
-  // additional assessments (Numerical Fluency, etc.)
+  // additional assessments (Numerical Fluency, etc.) — comparison-aware
   const extraNotes = extraCharts
     .filter(c => c.label.trim())
     .map(c => {
-      const checkedTopics = c.topics.filter(t=>t.checked && t.name.trim()).map(t=>t.name.trim());
-      if(!c.score.trim() && !checkedTopics.length) return null;
+      const hasComparison = !!c.prevScore.trim() || c.topics.some(t=>t.prev && t.prev.trim());
+      const checkedImproved = c.topics.filter(t=>{
+        if(!t.checked || !t.name.trim()) return false;
+        if(!hasComparison) return true;
+        const pv = fracToPct(t.prev), cv = fracToPct(t.curr);
+        return pv===null || cv===null || cv > pv; // include if improved, or if we can't compare
+      }).map(t=>t.name.trim());
+
+      if(!c.score.trim() && !checkedImproved.length) return null;
+
       let line = `${student} also completed the ${c.label.trim()}`;
-      if(c.score.trim()) line += `, scoring ${c.score.trim()} overall`;
+      if(hasComparison && c.prevScore.trim() && c.score.trim()){
+        line += `, moving from ${c.prevScore.trim()} to ${c.score.trim()} overall`;
+      } else if(c.score.trim()){
+        line += `, scoring ${c.score.trim()} overall`;
+      }
       line += '.';
-      if(checkedTopics.length) line += ` Highlights: ${checkedTopics.join(', ')}.`;
+      if(checkedImproved.length){
+        line += hasComparison
+          ? ` Improved on: ${checkedImproved.join(', ')}.`
+          : ` Highlights: ${checkedImproved.join(', ')}.`;
+      }
       return line;
     })
     .filter(Boolean);
