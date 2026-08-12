@@ -589,59 +589,109 @@ function parseChart(rows){
    NARRATIVE REPORT PARSER — for the family-facing "Assessment
    Report" / "Mastery Report" PDFs (used for Numerical Fluency
    and similar add-on assessments). These don't use the
-   percentage-bar layout above; scores appear as plain
-   "Category Name  N / M" text lines, which is reliable to
-   regex-match once rows are reconstructed in reading order.
-   The 3-wide summary cards at the very top of these reports
-   interleave unpredictably in text order, so this parser
-   deliberately ignores that section and reads the clean
-   single-column "Topics Mastered / Topics in Progress" and
-   "Assessment Skills" sections instead.
+   percentage-bar layout above.
+
+   Rather than listing category-level fractions (e.g. "Computation
+   9/11"), this pulls the individual concept names out of each
+   category's "Strengths" (mastered) and "Opportunities" (not yet)
+   columns — those columns sit side by side in the PDF, so each
+   row is split by x-position using the "Opportunities" header's
+   x0 as the column boundary. Only categories with a header row
+   get this treatment; single-category "Mastery Report" variants
+   with no per-topic breakdown fall back to the category name.
 --------------------------------------------------------- */
+const LEGEND_RE = /^(Initial Assessment|Recent Assessment|Improvement|To Do|Mastered|Awareness|Initial Topic)(\s+(Initial Assessment|Recent Assessment|Improvement|To Do|Mastered|Awareness|Initial Topic))*$/i;
+
 function parseNarrativeReport(rows){
-  const lines = rows.map(r => r.map(i=>i.text).join(' ').replace(/\s+/g,' ').trim()).filter(Boolean);
-  const fullText = lines.join('\n');
+  const joinRow = r => r.map(i=>i.text).join(' ').replace(/\s+/g,' ').trim();
+  const fullText = rows.map(joinRow).join('\n');
 
   if(!/Assessment Report|Mastery Report/i.test(fullText)) return null;
-
   const isMastery = /Mastery Report/i.test(fullText);
 
   let studentName = '';
-  for(const l of lines){
-    if(!/^(Mathnasium|Assessment Report|Mastery Report|Results|Below|This is)/i.test(l)){
+  for(const r of rows){
+    const l = joinRow(r);
+    if(l && !/^(Mathnasium|Assessment Report|Mastery Report|Results|Below|This is)/i.test(l)){
       studentName = l; break;
     }
   }
-
   let dateStr = '';
-  for(const l of lines){
+  for(const r of rows){
+    const l = joinRow(r);
     const m = l.match(/[A-Za-z]+ \d{1,2},\s*\d{4}/) || l.match(/\d{1,2}\/\d{1,2}\/\d{4}/);
     if(m){ dateStr = m[0]; break; }
   }
 
-  const categories = [];
+  const mastered = [];
+  const inProgress = [];
+  const fallbackCategories = []; // used only when there's no Strengths/Opportunities detail at all
   let overall = null;
   let pastHeader = false;
+  let inBlock = false;
+  let splitX = null;
 
-  lines.forEach(l=>{
+  rows.forEach(r=>{
+    const l = joinRow(r);
+    if(!l) return;
+
     if(!pastHeader){
-      if(/^Assessment (Topics|Skills)$/i.test(l)) pastHeader = true;
-      return; // skip the interleaved multi-column summary cards at the top entirely
+      if(/^Assessment Topics$/i.test(l)){
+        pastHeader = true;
+      } else {
+        const cm = l.match(/^(.+?)\s+(\d+)\s*\/\s*(\d+)\s*$/);
+        if(cm && !LEGEND_RE.test(cm[1].trim())){
+          fallbackCategories.push({name:cm[1].trim(), num:cm[2], den:cm[3]});
+        }
+      }
+      return;
+    }
+
+    if(/Center Director|Mathnasium of West Linn|\(\d{3}\)\s*\d{3}-\d{4}/i.test(l)){
+      inBlock = false; return;
     }
     const overallMatch = l.match(/^Skills Mastered\s+(\d+)\s*\/\s*(\d+)\s+(\d+)%\s*$/i);
     if(overallMatch){
       overall = {num:overallMatch[1], den:overallMatch[2], pct:overallMatch[3]};
+      inBlock = false; return;
+    }
+    if(/^Topics (Mastered|in Progress)$/i.test(l) || LEGEND_RE.test(l)){
+      inBlock = false; return;
+    }
+
+    const hasS = r.some(i=>i.text === 'Strengths');
+    const hasO = r.some(i=>i.text === 'Opportunities');
+    const cm = l.match(/^(.+?)\s+(\d+)\s*\/\s*(\d+)\s*$/);
+    if(cm && !hasS){
+      const name = cm[1].trim();
+      if(!/^(Topics|Strengths|Opportunities|To Do|Mastered|Skills Mastered)$/i.test(name)){
+        inBlock = false; splitX = null; return;
+      }
+    }
+    if(hasS){
+      inBlock = true;
+      if(hasO){
+        const oppItem = r.find(i=>i.text === 'Opportunities');
+        splitX = oppItem.x - 15;
+      } else {
+        splitX = null;
+      }
       return;
     }
-    const m = l.match(/^(.+?)\s+(\d+)\s*\/\s*(\d+)\s*$/);
-    if(m){
-      const name = m[1].trim();
-      if(/^(Topics|Strengths|Opportunities|To Do|Mastered|Skills Mastered)$/i.test(name)) return;
-      categories.push({name, num:m[2], den:m[3]});
+    if(inBlock){
+      if(splitX===null){
+        mastered.push(l);
+      } else {
+        const left = r.filter(i=>i.x < splitX).map(i=>i.text).join(' ').trim();
+        const right = r.filter(i=>i.x >= splitX).map(i=>i.text).join(' ').trim();
+        if(left) mastered.push(left);
+        if(right) inProgress.push(right);
+      }
     }
   });
 
-  return {mode: isMastery ? 'mastery' : 'assessment', studentName, date:dateStr, categories, overall};
+  return {mode: isMastery ? 'mastery' : 'assessment', studentName, date:dateStr,
+          mastered, inProgress, fallbackCategories, overall};
 }
 
 /* Merge a comparison-mode chart (topics appear twice: pre then post) into prev/curr pairs */
@@ -699,43 +749,79 @@ function mergeTwoCharts(prevChart, currChart){
   return out;
 }
 
+/* Converts a "N/M" fraction string into a rounded percent string ("54%"). */
+function fracLabelToPct(numOrStr, den){
+  let num, denom;
+  if(den !== undefined){ num = parseFloat(numOrStr); denom = parseFloat(den); }
+  else {
+    const m = String(numOrStr).match(/(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)/);
+    if(!m) return numOrStr;
+    num = parseFloat(m[1]); denom = parseFloat(m[2]);
+  }
+  if(!denom) return numOrStr;
+  return Math.round((num/denom)*100) + '%';
+}
+
 /* Same idea as foldComparisonChart/mergeTwoCharts, but for the narrative
-   "Assessment Report" / "Mastery Report" format — a single report becomes
-   a snapshot (curr only), two reports get matched by category name into
-   prev/curr pairs. Score fields carry "N/M" fractions instead of percents. */
+   "Assessment Report" / "Mastery Report" format. Rather than category
+   fractions, this lists the individual concepts pulled from each report's
+   "Strengths" (mastered) column. Overall scores are converted from "N/M"
+   fractions to percent, since that reads more naturally to parents. */
 function foldNarrativeSingle(report){
+  const topics = report.mastered.length
+    ? report.mastered.map(name=>({name, prev:null, curr:'Mastered'}))
+    : report.fallbackCategories.map(c=>({name:c.name, prev:null, curr:fracLabelToPct(c.num, c.den)}));
   return {
     studentName: report.studentName,
     prevScore:'', prevDate:'',
-    currScore: report.overall ? `${report.overall.num}/${report.overall.den}` : '',
+    currScore: report.overall ? fracLabelToPct(report.overall.num, report.overall.den) : '',
     currDate: report.date || '',
-    categories: [{name:'Skill Areas', topics: report.categories.map(c=>({name:c.name, prev:null, curr:`${c.num}/${c.den}`}))}]
+    categories: [{name: report.mastered.length ? 'Mastered Concepts' : 'Skill Areas', topics}]
   };
 }
 
 function mergeTwoNarrativeReports(prevReport, currReport){
-  const prevFlat = new Map();
-  prevReport.categories.forEach(c=>prevFlat.set(c.name.toLowerCase(), c));
-  const used = new Set();
+  const havesDetail = prevReport.mastered.length || currReport.mastered.length;
+  let topics;
 
-  const topics = currReport.categories.map(c=>{
-    const key = c.name.toLowerCase();
-    const match = prevFlat.get(key);
-    if(match) used.add(key);
-    return {name:c.name, prev: match ? `${match.num}/${match.den}` : null, curr:`${c.num}/${c.den}`};
-  });
-  prevFlat.forEach((c,key)=>{
-    if(used.has(key)) return;
-    topics.push({name:c.name, prev:`${c.num}/${c.den}`, curr:null});
-  });
+  if(havesDetail){
+    const prevMastered = new Set(prevReport.mastered.map(s=>s.toLowerCase()));
+    const prevInProgress = new Set(prevReport.inProgress.map(s=>s.toLowerCase()));
+    topics = [];
+    currReport.mastered.forEach(name=>{
+      const key = name.toLowerCase();
+      if(prevMastered.has(key)) return; // already mastered before — not a new achievement, skip
+      if(prevInProgress.has(key)){
+        topics.push({name, prev:'Not yet', curr:'Mastered'}); // moved from opportunity -> mastered
+      } else {
+        topics.push({name, prev:null, curr:'Mastered'}); // wasn't tracked before (e.g. grade-level-up)
+      }
+    });
+  } else {
+    // no Strengths/Opportunities detail available in either report (minimal Mastery Report) —
+    // fall back to matching by category name, same as the percentage-chart flow
+    const prevFlat = new Map();
+    prevReport.fallbackCategories.forEach(c=>prevFlat.set(c.name.toLowerCase(), c));
+    const used = new Set();
+    topics = currReport.fallbackCategories.map(c=>{
+      const key = c.name.toLowerCase();
+      const match = prevFlat.get(key);
+      if(match) used.add(key);
+      return {name:c.name, prev: match ? fracLabelToPct(match.num, match.den) : null, curr:fracLabelToPct(c.num, c.den)};
+    });
+    prevFlat.forEach((c,key)=>{
+      if(used.has(key)) return;
+      topics.push({name:c.name, prev:fracLabelToPct(c.num, c.den), curr:null});
+    });
+  }
 
   return {
     studentName: currReport.studentName || prevReport.studentName,
-    prevScore: prevReport.overall ? `${prevReport.overall.num}/${prevReport.overall.den}` : '',
+    prevScore: prevReport.overall ? fracLabelToPct(prevReport.overall.num, prevReport.overall.den) : '',
     prevDate: prevReport.date || '',
-    currScore: currReport.overall ? `${currReport.overall.num}/${currReport.overall.den}` : '',
+    currScore: currReport.overall ? fracLabelToPct(currReport.overall.num, currReport.overall.den) : '',
     currDate: currReport.date || '',
-    categories: [{name:'Skill Areas', topics}]
+    categories: [{name: havesDetail ? 'Newly Mastered Concepts' : 'Skill Areas', topics}]
   };
 }
 
@@ -802,7 +888,7 @@ document.getElementById('parseBtn').addEventListener('click', async ()=>{
       const rows = await extractRowsFromPDF(only);
 
       const narrative = parseNarrativeReport(rows);
-      if(narrative && narrative.categories.length){
+      if(narrative && (narrative.mastered.length || narrative.fallbackCategories.length)){
         merged = foldNarrativeSingle(narrative);
         merged.singleChartMode = true;
       } else {
@@ -1004,7 +1090,7 @@ let extraCounter = 0;
 
 function addExtraCard(){
   extraCounter++;
-  extraCharts.push({id:extraCounter, label: extraCharts.length===0 ? 'Numerical Fluency Assessment' : 'Additional Assessment', prevScore:'', score:'', topics:[]});
+  extraCharts.push({id:extraCounter, label: extraCharts.length===0 ? 'Numerical Fluency Assessment' : 'Additional Assessment', prevScore:'', score:'', topics:[], _narrativeCurr:null});
 }
 
 document.getElementById('addExtraBtn').addEventListener('click', ()=>{
@@ -1021,6 +1107,8 @@ renderExtra();
    into a comparable 0-100 number. Returns null if neither pattern matches. */
 function toComparableNum(s){
   if(!s) return null;
+  if(/^mastered$/i.test(s)) return 100;
+  if(/^not yet/i.test(s)) return 0;
   const frac = String(s).match(/(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)/);
   if(frac) return (parseFloat(frac[1])/parseFloat(frac[2]))*100;
   const pct = String(s).match(/(\d+(?:\.\d+)?)\s*%/);
@@ -1029,10 +1117,11 @@ function toComparableNum(s){
   return isNaN(num) ? null : num;
 }
 
-/* True if a score string represents a perfect/full score, for either
-   percent ("100%") or fraction ("39/39") formats. */
+/* True if a score string represents a perfect/full score, for percent
+   ("100%"), fraction ("39/39"), or the narrative-report "Mastered" sentinel. */
 function isFullScore(s){
   if(!s) return false;
+  if(/^mastered$/i.test(s)) return true;
   const frac = String(s).match(/^(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)$/);
   if(frac) return parseFloat(frac[1]) === parseFloat(frac[2]) && parseFloat(frac[2]) > 0;
   const v = toComparableNum(s);
@@ -1147,6 +1236,7 @@ function renderExtra(){
   });
 
   // CURRENT report upload
+  // CURRENT report upload
   host.querySelectorAll('.extraFile').forEach(el=>el.addEventListener('change', async e=>{
     const card = extraCharts.find(c=>c.id===+e.target.dataset.id);
     const statusEl = host.querySelector(`.extraStatus[data-id="${card.id}"]`);
@@ -1155,23 +1245,32 @@ function renderExtra(){
     statusEl.textContent = 'Reading current report...';
     statusEl.className = 'status';
     try{
-      const parsed = await parseNarrativeOrChart(file);
+      const parsed = await parseAnyAssessmentFile(file);
       if(!parsed){
         statusEl.textContent = 'Could not auto-read that PDF (this happens with the raw checkbox-style Numerical Fluency checkup — the checkmarks are images, not text). Add the score/notes by hand below instead.';
         statusEl.className = 'status err';
-      } else {
-        // merge into existing topics by name, preserving any prev values already present
+        card._narrativeCurr = null;
+      } else if(parsed.kind==='chart'){
         const existingByName = new Map(card.topics.map(t=>[t.name.toLowerCase(), t]));
-        const newTopics = parsed.topics.map(nt=>{
+        card.topics = parsed.topics.map(nt=>{
           const existing = existingByName.get(nt.name.toLowerCase());
           return {name:nt.name, curr:nt.value, prev: existing ? existing.prev : '', checked:true};
         });
-        card.topics = newTopics;
         if(parsed.overall) card.score = parsed.overall;
-        if(parsed.studentName && !document.getElementById('studentName').value){
-          document.getElementById('studentName').value = parsed.studentName;
+        card._narrativeCurr = null;
+        statusEl.textContent = `Analyzed ${card.topics.length} row(s) — review below.`;
+        statusEl.className = 'status ok';
+      } else {
+        const nr = parsed.narrative;
+        card._narrativeCurr = nr;
+        card.topics = nr.mastered.length
+          ? nr.mastered.map(name=>({name, curr:'Mastered', prev:'', checked:true}))
+          : nr.fallbackCategories.map(c=>({name:c.name, curr:fracLabelToPct(c.num,c.den), prev:'', checked:true}));
+        if(nr.overall) card.score = fracLabelToPct(nr.overall.num, nr.overall.den);
+        if(nr.studentName && !document.getElementById('studentName').value){
+          document.getElementById('studentName').value = nr.studentName;
         }
-        statusEl.textContent = `Analyzed ${parsed.topics.length} row(s) — review below.`;
+        statusEl.textContent = `Analyzed ${card.topics.length} row(s) — review below.`;
         statusEl.className = 'status ok';
       }
       renderExtra();
@@ -1191,11 +1290,36 @@ function renderExtra(){
     statusEl.textContent = 'Reading previous report...';
     statusEl.className = 'status';
     try{
-      const parsed = await parseNarrativeOrChart(file);
+      const parsed = await parseAnyAssessmentFile(file);
       if(!parsed){
         statusEl.textContent = 'Could not auto-read that previous-report PDF — fill in the "Prev" column by hand instead.';
         statusEl.className = 'status err';
-      } else {
+      } else if(card._narrativeCurr && parsed.kind==='narrative'){
+        // both current and previous are narrative reports — rebuild the topic list to only
+        // show concepts newly mastered since the previous report (same rule as the main flow)
+        const currNr = card._narrativeCurr;
+        const prevNr = parsed.narrative;
+        if(prevNr.overall) card.prevScore = fracLabelToPct(prevNr.overall.num, prevNr.overall.den);
+        if(currNr.mastered.length || prevNr.mastered.length){
+          const prevMastered = new Set(prevNr.mastered.map(s=>s.toLowerCase()));
+          const prevInProgress = new Set(prevNr.inProgress.map(s=>s.toLowerCase()));
+          card.topics = currNr.mastered
+            .filter(name=>!prevMastered.has(name.toLowerCase()))
+            .map(name=>{
+              const key = name.toLowerCase();
+              return {name, curr:'Mastered', prev: prevInProgress.has(key) ? 'Not yet' : '', checked:true};
+            });
+          statusEl.textContent = `Found ${card.topics.length} newly mastered concept(s) — review below.`;
+        } else {
+          const prevFlat = new Map(prevNr.fallbackCategories.map(c=>[c.name.toLowerCase(), c]));
+          card.topics = currNr.fallbackCategories.map(c=>{
+            const m = prevFlat.get(c.name.toLowerCase());
+            return {name:c.name, curr:fracLabelToPct(c.num,c.den), prev: m?fracLabelToPct(m.num,m.den):'', checked:true};
+          });
+          statusEl.textContent = `Compared ${card.topics.length} categor${card.topics.length===1?'y':'ies'} — review below.`;
+        }
+        statusEl.className = 'status ok';
+      } else if(parsed.kind==='chart'){
         if(parsed.overall) card.prevScore = parsed.overall;
         const prevByName = new Map(parsed.topics.map(t=>[t.name.toLowerCase(), t.value]));
         const usedNames = new Set();
@@ -1203,7 +1327,6 @@ function renderExtra(){
           const key = t.name.toLowerCase();
           if(prevByName.has(key)){ t.prev = prevByName.get(key); usedNames.add(key); }
         });
-        // any previous-only categories (e.g. an assessment not retested this time) get appended
         parsed.topics.forEach(t=>{
           if(!usedNames.has(t.name.toLowerCase())){
             card.topics.push({name:t.name, prev:t.value, curr:'', checked:false});
@@ -1211,6 +1334,9 @@ function renderExtra(){
         });
         statusEl.textContent = `Matched ${usedNames.size} topic(s) to the current report — review below.`;
         statusEl.className = 'status ok';
+      } else {
+        statusEl.textContent = 'That previous-report format doesn\'t match the current report\'s format — fill in the "Prev" column by hand instead.';
+        statusEl.className = 'status err';
       }
       renderExtra();
     } catch(err){
@@ -1221,25 +1347,20 @@ function renderExtra(){
   }));
 }
 
-/* Try the percentage-bar chart layout first, then the narrative report layout.
-   Returns {studentName, overall, topics:[{name,value}]} or null if neither matched. */
-async function parseNarrativeOrChart(file){
+/* Try the percentage-bar chart layout first, then the narrative report layout. */
+async function parseAnyAssessmentFile(file){
   const rows = await extractRowsFromPDF(file);
 
   const chart = parseChart(rows);
   const chartTopics = [];
   chart.categories.forEach(cat=>cat.topics.forEach(t=>chartTopics.push({name:t.name, value:t.percent})));
   if(chartTopics.length){
-    return {studentName:chart.studentName, overall:chart.scores[0]||'', topics:chartTopics};
+    return {kind:'chart', studentName:chart.studentName, overall:chart.scores[0]||'', topics:chartTopics};
   }
 
   const narrative = parseNarrativeReport(rows);
-  if(narrative && narrative.categories.length){
-    return {
-      studentName: narrative.studentName,
-      overall: narrative.overall ? `${narrative.overall.num}/${narrative.overall.den} (${narrative.overall.pct}%)` : '',
-      topics: narrative.categories.map(c=>({name:c.name, value:`${c.num}/${c.den}`}))
-    };
+  if(narrative && (narrative.mastered.length || narrative.fallbackCategories.length)){
+    return {kind:'narrative', studentName:narrative.studentName, narrative};
   }
   return null;
 }
