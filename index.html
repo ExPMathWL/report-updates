@@ -245,6 +245,21 @@
     padding:10px 12px;
     font-size:13px;
   }
+
+  #extraDetails summary::-webkit-details-marker{display:none;}
+  #extraDetails summary{list-style:none;}
+  #extraDetails .step-num{position:relative;}
+  #extraDetails .step-num::after{
+    content:'▾';
+    position:absolute;
+    inset:0;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    transition:transform .12s;
+  }
+  #extraDetails[open] .step-num::after{transform:rotate(180deg);}
+  #extraDetails .step-num{font-size:0;}
 </style>
 </head>
 <body>
@@ -253,7 +268,7 @@
   <div class="wrap">
     <div class="wordmark">MATHNASIUM<span class="sub">West Linn · Staff Tool</span></div>
     <h1>Progress Report Builder</h1>
-    <p>Upload two Radius assessment-chart PDFs (or one comparison chart), review the parsed scores, and draft a parent update email.</p>
+    <p>Upload two Radius assessment-chart PDFs (or one comparison chart), review the results, and draft a parent update email.</p>
   </div>
 </header>
 
@@ -269,7 +284,7 @@
       <ul>
         <li>Upload all assessment reports.</li>
         <li>Check the student details.</li>
-        <li>Review the parsed scores and adjust as necessary.</li>
+        <li>Review the analyzed scores and adjust as necessary.</li>
         <li>Fill in the new learning plan topics by hand.</li>
         <li>Generate the email.</li>
       </ul>
@@ -300,15 +315,23 @@
         </label>
       </div>
       <div class="btn-row">
-        <button class="btn-primary" id="parseBtn">Parse charts</button>
+        <button class="btn-primary" id="parseBtn">Analyze charts</button>
         <button class="btn-ghost" id="manualBtn">Skip — build table manually</button>
         <span class="status" id="parseStatus"></span>
       </div>
+    </div>
+  </div>
 
-      <hr style="border:none;border-top:1px solid var(--line);margin:22px 0;">
-
-      <h3 style="margin:0 0 6px 0;font-size:14.5px;">Additional assessments <span style="font-weight:400;color:var(--ink-soft);">(optional)</span></h3>
-      <p class="desc">For assessments outside the main skill chart — Numerical Fluency is the common one. Upload its PDF if it uses the same Radius chart layout, or just fill in the summary by hand. These parse on upload automatically, no separate button needed.</p>
+  <details class="step" id="extraDetails" style="padding:0;">
+    <summary style="cursor:pointer;list-style:none;">
+      <div class="step-head" style="border-bottom:none;">
+        <div class="step-num" style="background:var(--grey);">+</div>
+        <h2>Additional assessments <span style="font-weight:400;color:var(--ink-soft);">(optional)</span></h2>
+        <div class="hint">Numerical Fluency, etc. — click to expand</div>
+      </div>
+    </summary>
+    <div class="step-body" style="border-top:1px solid var(--line);">
+      <p class="desc">For assessments outside the main skill chart — Numerical Fluency is the common one. Upload its PDF if it uses the same Radius report layout, or just fill in the summary by hand. These analyze on upload automatically, no separate button needed.</p>
       <div id="extraHost"></div>
       <datalist id="assessmentPresets">
         <option value="Numerical Fluency - Addition and Subtraction">
@@ -321,14 +344,14 @@
         <button class="btn-secondary btn-sm" id="addExtraBtn">+ Add another assessment</button>
       </div>
     </div>
-  </div>
+  </details>
 
   <!-- STEP 2 -->
   <div class="step" id="stepMeta" style="display:none;">
     <div class="step-head">
       <div class="step-num">2</div>
       <h2>Student &amp; assessment details</h2>
-      <div class="hint">Edit anything that parsed wrong</div>
+      <div class="hint">Edit anything that came in wrong</div>
     </div>
     <div class="step-body">
       <div class="meta-grid" style="margin-bottom:16px;">
@@ -676,6 +699,60 @@ function mergeTwoCharts(prevChart, currChart){
   return out;
 }
 
+/* Same idea as foldComparisonChart/mergeTwoCharts, but for the narrative
+   "Assessment Report" / "Mastery Report" format — a single report becomes
+   a snapshot (curr only), two reports get matched by category name into
+   prev/curr pairs. Score fields carry "N/M" fractions instead of percents. */
+function foldNarrativeSingle(report){
+  return {
+    studentName: report.studentName,
+    prevScore:'', prevDate:'',
+    currScore: report.overall ? `${report.overall.num}/${report.overall.den}` : '',
+    currDate: report.date || '',
+    categories: [{name:'Skill Areas', topics: report.categories.map(c=>({name:c.name, prev:null, curr:`${c.num}/${c.den}`}))}]
+  };
+}
+
+function mergeTwoNarrativeReports(prevReport, currReport){
+  const prevFlat = new Map();
+  prevReport.categories.forEach(c=>prevFlat.set(c.name.toLowerCase(), c));
+  const used = new Set();
+
+  const topics = currReport.categories.map(c=>{
+    const key = c.name.toLowerCase();
+    const match = prevFlat.get(key);
+    if(match) used.add(key);
+    return {name:c.name, prev: match ? `${match.num}/${match.den}` : null, curr:`${c.num}/${c.den}`};
+  });
+  prevFlat.forEach((c,key)=>{
+    if(used.has(key)) return;
+    topics.push({name:c.name, prev:`${c.num}/${c.den}`, curr:null});
+  });
+
+  return {
+    studentName: currReport.studentName || prevReport.studentName,
+    prevScore: prevReport.overall ? `${prevReport.overall.num}/${prevReport.overall.den}` : '',
+    prevDate: prevReport.date || '',
+    currScore: currReport.overall ? `${currReport.overall.num}/${currReport.overall.den}` : '',
+    currDate: currReport.date || '',
+    categories: [{name:'Skill Areas', topics}]
+  };
+}
+
+/* Parses dates in either "8/5/2026" (chart) or "August 5, 2026" (narrative report) form. */
+function parseFlexDate(s){
+  if(!s) return new Date(0);
+  let m = s.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if(m) return new Date(+m[3], +m[1]-1, +m[2]);
+  m = s.match(/([A-Za-z]+)\s+(\d{1,2}),\s*(\d{4})/);
+  if(m){
+    const months = ['january','february','march','april','may','june','july','august','september','october','november','december'];
+    const mi = months.indexOf(m[1].toLowerCase());
+    if(mi>=0) return new Date(+m[3], mi, +m[2]);
+  }
+  return new Date(0);
+}
+
 /* ---------------------------------------------------------
    PARSE BUTTON
 --------------------------------------------------------- */
@@ -693,30 +770,56 @@ document.getElementById('parseBtn').addEventListener('click', async ()=>{
     if(filesChosen.A && filesChosen.B){
       const rowsA = await extractRowsFromPDF(filesChosen.A);
       const rowsB = await extractRowsFromPDF(filesChosen.B);
-      const chartA = parseChart(rowsA);
-      const chartB = parseChart(rowsB);
-      // order by date
-      const toDate = s => { const m=(s||'').match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/); return m? new Date(+m[3],+m[1]-1,+m[2]) : new Date(0); };
-      const dA = toDate(chartA.dates[0]), dB = toDate(chartB.dates[0]);
-      const prevChart = dA<=dB ? chartA : chartB;
-      const currChart = dA<=dB ? chartB : chartA;
-      merged = mergeTwoCharts(prevChart, currChart);
+
+      // check for the narrative "Assessment Report" / "Mastery Report" format first —
+      // running the percentage-chart parser on one of these produces garbage, since
+      // every line in that format fails the percent-row test and gets misread as a
+      // category header.
+      const narrA = parseNarrativeReport(rowsA);
+      const narrB = parseNarrativeReport(rowsB);
+      if(narrA || narrB){
+        const only = narrA && narrB ? null : (narrA || narrB);
+        if(only){
+          // one file is a narrative report, the other isn't — can't mix formats in a pair
+          statusEl.textContent = 'Those two PDFs are in different formats (one looks like an Assessment/Mastery Report, the other doesn\'t) — upload two of the same kind, or just one at a time.';
+          statusEl.className = 'status err';
+          return;
+        }
+        const dA = parseFlexDate(narrA.date), dB = parseFlexDate(narrB.date);
+        const prevReport = dA<=dB ? narrA : narrB;
+        const currReport = dA<=dB ? narrB : narrA;
+        merged = mergeTwoNarrativeReports(prevReport, currReport);
+      } else {
+        const chartA = parseChart(rowsA);
+        const chartB = parseChart(rowsB);
+        const dA = parseFlexDate(chartA.dates[0]), dB = parseFlexDate(chartB.dates[0]);
+        const prevChart = dA<=dB ? chartA : chartB;
+        const currChart = dA<=dB ? chartB : chartA;
+        merged = mergeTwoCharts(prevChart, currChart);
+      }
     } else {
       const only = filesChosen.A || filesChosen.B;
       const rows = await extractRowsFromPDF(only);
-      const chart = parseChart(rows);
-      if(chart.mode==='comparison'){
-        merged = foldComparisonChart(chart);
+
+      const narrative = parseNarrativeReport(rows);
+      if(narrative && narrative.categories.length){
+        merged = foldNarrativeSingle(narrative);
+        merged.singleChartMode = true;
       } else {
-        // single assessment only, no comparison available -> pre-assessment case
-        merged = {studentName:chart.studentName, prevScore:'', prevDate:'',
-                   currScore:chart.scores[0]||'', currDate:chart.dates[0]||'',
-                   categories: chart.categories.map(c=>({name:c.name, topics:c.topics.map(t=>({name:t.name, prev:null, curr:t.percent}))})),
-                   singleChartMode:true};
+        const chart = parseChart(rows);
+        if(chart.mode==='comparison'){
+          merged = foldComparisonChart(chart);
+        } else {
+          // single assessment only, no comparison available -> pre-assessment case
+          merged = {studentName:chart.studentName, prevScore:'', prevDate:'',
+                     currScore:chart.scores[0]||'', currDate:chart.dates[0]||'',
+                     categories: chart.categories.map(c=>({name:c.name, topics:c.topics.map(t=>({name:t.name, prev:null, curr:t.percent}))})),
+                     singleChartMode:true};
+        }
       }
     }
     dataset = merged;
-    statusEl.textContent = 'Parsed. Review the details below — fix anything that looks off.';
+    statusEl.textContent = 'Analyzed. Review the details below — fix anything that looks off.';
     statusEl.className = 'status ok';
     revealSteps();
     document.getElementById('preAssessmentToggle').checked = !!dataset.singleChartMode;
@@ -724,7 +827,7 @@ document.getElementById('parseBtn').addEventListener('click', async ()=>{
     renderTable();
   } catch(e){
     console.error(e);
-    statusEl.textContent = 'Could not parse that PDF automatically. Use "build table manually" instead, or try re-exporting from Radius.';
+    statusEl.textContent = 'Could not analyze that PDF automatically. Use "build table manually" instead, or try re-exporting from Radius.';
     statusEl.className = 'status err';
   }
 });
@@ -810,8 +913,7 @@ function renderTable(){
       const rowId = `${ci}_${ti}`;
 
       if(preMode){
-        const cv = t.curr!==null ? parseFloat(t.curr) : null;
-        const masteryChecked = cv===100;
+        const masteryChecked = isFullScore(t.curr);
         html += `<tr data-row="${rowId}">
           <td></td>
           <td><input type="text" class="topicName" data-row="${rowId}" value="${escapeAttr(t.name)}"></td>
@@ -822,12 +924,12 @@ function renderTable(){
         return;
       }
 
-      const pv = t.prev!==null ? parseFloat(t.prev) : null;
-      const cv = t.curr!==null ? parseFloat(t.curr) : null;
+      const pv = t.prev!==null ? toComparableNum(t.prev) : null;
+      const cv = t.curr!==null ? toComparableNum(t.curr) : null;
       let deltaText = '—', improvedChecked=false, isNew=false;
       if(pv!==null && cv!==null){
         const d = Math.round((cv-pv)*10)/10;
-        deltaText = (d>0?'+':'')+d+'%';
+        deltaText = (d>0?'+':'')+d+'%pt';
         improvedChecked = d>0;
       } else if(pv===null && cv!==null){
         deltaText = '<span class="pill na">new</span>'; isNew=true;
@@ -915,10 +1017,26 @@ document.getElementById('addExtraBtn').addEventListener('click', ()=>{
 addExtraCard();
 renderExtra();
 
-function fracToPct(s){
-  const m = (s||'').match(/(\d+)\s*\/\s*(\d+)/);
-  if(!m) return null;
-  return (parseFloat(m[1])/parseFloat(m[2]))*100;
+/* Converts either a percent string ("56%") or a fraction string ("20/39")
+   into a comparable 0-100 number. Returns null if neither pattern matches. */
+function toComparableNum(s){
+  if(!s) return null;
+  const frac = String(s).match(/(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)/);
+  if(frac) return (parseFloat(frac[1])/parseFloat(frac[2]))*100;
+  const pct = String(s).match(/(\d+(?:\.\d+)?)\s*%/);
+  if(pct) return parseFloat(pct[1]);
+  const num = parseFloat(s);
+  return isNaN(num) ? null : num;
+}
+
+/* True if a score string represents a perfect/full score, for either
+   percent ("100%") or fraction ("39/39") formats. */
+function isFullScore(s){
+  if(!s) return false;
+  const frac = String(s).match(/^(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)$/);
+  if(frac) return parseFloat(frac[1]) === parseFloat(frac[2]) && parseFloat(frac[2]) > 0;
+  const v = toComparableNum(s);
+  return v === 100;
 }
 
 function renderExtra(){
@@ -1053,13 +1171,13 @@ function renderExtra(){
         if(parsed.studentName && !document.getElementById('studentName').value){
           document.getElementById('studentName').value = parsed.studentName;
         }
-        statusEl.textContent = `Parsed ${parsed.topics.length} row(s) — review below.`;
+        statusEl.textContent = `Analyzed ${parsed.topics.length} row(s) — review below.`;
         statusEl.className = 'status ok';
       }
       renderExtra();
     } catch(err){
       console.error(err);
-      statusEl.textContent = 'Could not parse that PDF — add notes by hand below instead.';
+      statusEl.textContent = 'Could not analyze that PDF — add notes by hand below instead.';
       statusEl.className = 'status err';
     }
   }));
@@ -1097,7 +1215,7 @@ function renderExtra(){
       renderExtra();
     } catch(err){
       console.error(err);
-      statusEl.textContent = 'Could not parse that PDF — fill in the "Prev" column by hand instead.';
+      statusEl.textContent = 'Could not analyze that PDF — fill in the "Prev" column by hand instead.';
       statusEl.className = 'status err';
     }
   }));
@@ -1193,7 +1311,7 @@ document.getElementById('genBtn').addEventListener('click', ()=>{
       const checkedImproved = c.topics.filter(t=>{
         if(!t.checked || !t.name.trim()) return false;
         if(!hasComparison) return true;
-        const pv = fracToPct(t.prev), cv = fracToPct(t.curr);
+        const pv = toComparableNum(t.prev), cv = toComparableNum(t.curr);
         return pv===null || cv===null || cv > pv; // include if improved, or if we can't compare
       }).map(t=>t.name.trim());
 
