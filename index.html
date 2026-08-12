@@ -123,10 +123,47 @@
   }
   .drop:hover{border-color:var(--red);background:#fff6f5;}
   .drop.filled{border-style:solid;border-color:var(--up);background:var(--up-bg);}
+  .drop.dragging{border-color:var(--red);background:#fff0ee;border-style:solid;}
   .drop input{display:none;}
   .drop .label{font-size:12.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-soft);font-weight:700;margin-bottom:6px;}
   .drop .filename{font-size:13px;font-weight:600;word-break:break-word;}
   .drop .sub{font-size:12px;color:var(--ink-soft);margin-top:4px;}
+  .drop-wrap{position:relative;}
+  .drop-clear{
+    display:none;
+    position:absolute;
+    top:6px; right:6px;
+    width:20px; height:20px;
+    border-radius:50%;
+    background:var(--black);
+    color:#fff;
+    border:none;
+    font-size:12px;
+    line-height:20px;
+    padding:0;
+    cursor:pointer;
+    z-index:2;
+  }
+  .drop-clear:hover{background:var(--red);}
+  .drop-wrap.filled .drop-clear{display:block;}
+
+  .file-chip-list{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;}
+  .file-chip{
+    display:inline-flex;align-items:center;gap:8px;
+    background:#f2f2f2;border:1px solid var(--line);border-radius:20px;
+    padding:5px 8px 5px 12px;font-size:12.5px;font-weight:600;
+  }
+  .file-chip button{
+    background:var(--grey);color:#fff;border:none;border-radius:50%;
+    width:16px;height:16px;font-size:10px;line-height:16px;padding:0;cursor:pointer;
+  }
+  .file-chip button:hover{background:var(--red);}
+  .sort-summary{
+    background:#f2f2f2;border-left:3px solid var(--red);border-radius:0 6px 6px 0;
+    padding:10px 14px;font-size:13px;margin-top:12px;
+  }
+  .sort-summary ul{margin:6px 0 0 0;padding-left:18px;}
+  .sort-summary li{margin-bottom:3px;}
 
   button{
     font-family:inherit;
@@ -299,23 +336,18 @@
       <div class="hint">PDF exports from Radius</div>
     </div>
     <div class="step-body">
-      <p class="desc">Upload <strong>one Comparison Chart</strong> (already has Pre/Post bars) in slot A, <em>or</em> two separate <strong>Assessment Charts</strong> — one in each slot. Slot order doesn't matter; the tool sorts by date automatically.</p>
-      <div class="upload-grid">
-        <label class="drop" id="dropA">
-          <div class="label">Slot A</div>
-          <div class="filename" id="fileNameA">Click to choose a PDF</div>
-          <div class="sub">Comparison chart, or one assessment chart</div>
-          <input type="file" id="fileA" accept="application/pdf">
-        </label>
-        <label class="drop" id="dropB">
-          <div class="label">Slot B (optional)</div>
-          <div class="filename" id="fileNameB">Click to choose a PDF</div>
-          <div class="sub">Second assessment chart, if comparing two</div>
-          <input type="file" id="fileB" accept="application/pdf">
+      <p class="desc">Drop in <strong>all</strong> of this student's PDFs at once — main chart(s), Numerical Fluency, Extension, whatever you've got. The tool sorts out what's what and where it goes. It's a best guess where charts look identical (like a main chart vs. an Extension chart), so double-check the summary after analyzing.</p>
+      <div class="drop-wrap" id="dropWrapAll">
+        <label class="drop" id="dropAll">
+          <div class="label">All assessment PDFs</div>
+          <div class="filename" id="fileNameAll">Drag PDFs here (one or several), or click to choose</div>
+          <div class="sub">Assessment Charts, Comparison Charts, Assessment/Mastery Reports — any mix</div>
+          <input type="file" id="fileAll" accept="application/pdf" multiple>
         </label>
       </div>
+      <div id="fileListAll"></div>
       <div class="btn-row">
-        <button class="btn-primary" id="parseBtn">Analyze charts</button>
+        <button class="btn-primary" id="parseBtn">Analyze all</button>
         <button class="btn-ghost" id="manualBtn">Skip — build table manually</button>
         <span class="status" id="parseStatus"></span>
       </div>
@@ -327,11 +359,11 @@
       <div class="step-head" style="border-bottom:none;">
         <div class="step-num" style="background:var(--grey);">+</div>
         <h2>Additional assessments <span style="font-weight:400;color:var(--ink-soft);">(optional)</span></h2>
-        <div class="hint">Numerical Fluency, etc. — click to expand</div>
+        <div class="hint">Auto-filled from Step 1, or add your own — click to expand</div>
       </div>
     </summary>
     <div class="step-body" style="border-top:1px solid var(--line);">
-      <p class="desc">For assessments outside the main skill chart — Numerical Fluency is the common one. Upload its PDF if it uses the same Radius report layout, or just fill in the summary by hand. These analyze on upload automatically, no separate button needed.</p>
+      <p class="desc">Anything that didn't get sorted into the main assessment above lands here automatically. You can also add or upload into a card by hand.</p>
       <div id="extraHost"></div>
       <datalist id="assessmentPresets">
         <option value="Numerical Fluency - Addition and Subtraction">
@@ -438,28 +470,59 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs
 /* ---------------------------------------------------------
    STATE
 --------------------------------------------------------- */
-let filesChosen = {A:null, B:null};
+let filesChosen = []; // array of File objects, any mix of chart/report PDFs
 let dataset = { studentName:'', prevScore:'', prevDate:'', currScore:'', currDate:'',
                 categories: [] }; // categories: [{name, topics:[{name, prev, curr}]}]
 let catCounter = 0;
 
 /* ---------------------------------------------------------
-   FILE PICKERS
+   FILE PICKER (single multi-file drop zone)
 --------------------------------------------------------- */
-function wireDrop(slot){
-  const drop = document.getElementById('drop'+slot);
-  const input = document.getElementById('file'+slot);
-  const nameEl = document.getElementById('fileName'+slot);
-  drop.addEventListener('click', ()=>input.click());
-  input.addEventListener('change', ()=>{
-    if(input.files && input.files[0]){
-      filesChosen[slot] = input.files[0];
-      nameEl.textContent = input.files[0].name;
-      drop.classList.add('filled');
-    }
-  });
+const DEFAULT_DROP_TEXT_ALL = 'Drag PDFs here (one or several), or click to choose';
+
+function renderFileList(){
+  const host = document.getElementById('fileListAll');
+  const wrap = document.getElementById('dropWrapAll');
+  const nameEl = document.getElementById('fileNameAll');
+  if(!filesChosen.length){
+    host.innerHTML = '';
+    wrap.classList.remove('filled');
+    nameEl.textContent = DEFAULT_DROP_TEXT_ALL;
+    return;
+  }
+  wrap.classList.add('filled');
+  nameEl.textContent = `${filesChosen.length} file${filesChosen.length===1?'':'s'} ready to analyze`;
+  host.innerHTML = `<div class="file-chip-list">${filesChosen.map((f,i)=>
+    `<span class="file-chip">${escapeAttr(f.name)}<button type="button" data-i="${i}" class="fileRemoveBtn" title="Remove">✕</button></span>`
+  ).join('')}</div>`;
+  host.querySelectorAll('.fileRemoveBtn').forEach(btn=>btn.addEventListener('click', e=>{
+    filesChosen.splice(+e.currentTarget.dataset.i, 1);
+    renderFileList();
+  }));
 }
-wireDrop('A'); wireDrop('B');
+
+function addFiles(fileList){
+  Array.from(fileList||[]).forEach(f=>{
+    if(f.type==='application/pdf' || /\.pdf$/i.test(f.name)) filesChosen.push(f);
+  });
+  renderFileList();
+}
+
+(function wireAllDrop(){
+  const drop = document.getElementById('dropAll');
+  const input = document.getElementById('fileAll');
+
+  drop.addEventListener('click', ()=>input.click());
+  input.addEventListener('change', ()=>{ addFiles(input.files); input.value=''; });
+
+  drop.addEventListener('dragover', e=>{ e.preventDefault(); drop.classList.add('dragging'); });
+  drop.addEventListener('dragleave', ()=> drop.classList.remove('dragging'));
+  drop.addEventListener('drop', e=>{
+    e.preventDefault();
+    drop.classList.remove('dragging');
+    addFiles(e.dataTransfer.files);
+  });
+})();
 
 document.getElementById('manualBtn').addEventListener('click', ()=>{
   dataset = { studentName:'', prevScore:'', prevDate:'', currScore:'', currDate:'', categories: [], singleChartMode:false };
@@ -903,79 +966,133 @@ function guessAssessmentNamesFromFilename(filename){
 --------------------------------------------------------- */
 document.getElementById('parseBtn').addEventListener('click', async ()=>{
   const statusEl = document.getElementById('parseStatus');
-  if(!filesChosen.A && !filesChosen.B){
+  if(!filesChosen.length){
     statusEl.textContent = 'Choose at least one PDF first.';
     statusEl.className = 'status err';
     return;
   }
-  statusEl.textContent = 'Reading PDF(s)...';
+  statusEl.textContent = `Reading ${filesChosen.length} PDF(s)...`;
   statusEl.className = 'status';
-  try{
-    let merged;
-    if(filesChosen.A && filesChosen.B){
-      const rowsA = await extractRowsFromPDF(filesChosen.A);
-      const rowsB = await extractRowsFromPDF(filesChosen.B);
 
-      // check for the narrative "Assessment Report" / "Mastery Report" format first —
-      // running the percentage-chart parser on one of these produces garbage, since
-      // every line in that format fails the percent-row test and gets misread as a
-      // category header.
-      const narrA = parseNarrativeReport(rowsA);
-      const narrB = parseNarrativeReport(rowsB);
-      if(narrA || narrB){
-        const only = narrA && narrB ? null : (narrA || narrB);
-        if(only){
-          // one file is a narrative report, the other isn't — can't mix formats in a pair
-          statusEl.textContent = 'Those two PDFs are in different formats (one looks like an Assessment/Mastery Report, the other doesn\'t) — upload two of the same kind, or just one at a time.';
-          statusEl.className = 'status err';
-          return;
+  try{
+    // classify every file
+    const classified = [];
+    const unreadable = [];
+    for(const file of filesChosen){
+      const parsed = await parseAnyAssessmentFile(file);
+      if(parsed) classified.push(parsed);
+      else unreadable.push(file.name);
+    }
+    if(!classified.length){
+      statusEl.textContent = 'Could not automatically read any of those PDFs. Use "build table manually" instead, or try re-exporting from Radius.';
+      statusEl.className = 'status err';
+      return;
+    }
+
+    const isMainNarrative = c => c.kind==='narrative' && c.assessmentNames.some(n=>/^(Level \d|Computation|High School)/i.test(n));
+    const byDate = (a,b) => parseFlexDate(a.dateRaw) - parseFlexDate(b.dateRaw);
+
+    const narrativeMain = classified.filter(isMainNarrative).sort(byDate);
+    const chartFiles = classified.filter(c=>c.kind==='chart').sort(byDate);
+    const narrativeExtra = classified.filter(c=>c.kind==='narrative' && !isMainNarrative(c)).sort(byDate);
+
+    let mainPool = [], mainKind = null;
+    if(narrativeMain.length){ mainPool = narrativeMain; mainKind = 'narrative'; }
+    else if(chartFiles.length){ mainPool = chartFiles; mainKind = 'chart'; }
+
+    const summary = []; // lines describing what got sorted where
+    let leftovers = []; // classified files not used for the main slot
+
+    if(mainPool.length){
+      const mainUsed = mainPool.length <= 2 ? mainPool : [mainPool[0], mainPool[mainPool.length-1]];
+      const mainSkipped = mainPool.length > 2 ? mainPool.slice(1, -1) : [];
+
+      let merged;
+      if(mainUsed.length === 1){
+        const only = mainUsed[0];
+        if(only.kind === 'narrative'){
+          merged = foldNarrativeSingle(only.narrative);
+          merged.singleChartMode = true;
+          merged.assessmentsGiven = only.assessmentNames;
+        } else {
+          const chart = parseChart(await extractRowsFromPDF(only.file));
+          if(chart.mode==='comparison'){
+            merged = foldComparisonChart(chart);
+          } else {
+            merged = {studentName:chart.studentName, prevScore:'', prevDate:'',
+                       currScore:chart.scores[0]||'', currDate:chart.dates[0]||'',
+                       categories: chart.categories.map(c=>({name:c.name, topics:c.topics.map(t=>({name:t.name, prev:null, curr:t.percent}))})),
+                       singleChartMode:true};
+          }
         }
-        const dA = parseFlexDate(narrA.date), dB = parseFlexDate(narrB.date);
-        const prevReport = dA<=dB ? narrA : narrB;
-        const currReport = dA<=dB ? narrB : narrA;
-        const currFile = dA<=dB ? filesChosen.B : filesChosen.A;
-        merged = mergeTwoNarrativeReports(prevReport, currReport);
-        merged.assessmentsGiven = guessAssessmentNamesFromFilename(currFile.name);
+        summary.push(`Main assessment: <strong>${escapeAttr(only.file.name)}</strong> (single snapshot)`);
       } else {
-        const chartA = parseChart(rowsA);
-        const chartB = parseChart(rowsB);
-        const dA = parseFlexDate(chartA.dates[0]), dB = parseFlexDate(chartB.dates[0]);
-        const prevChart = dA<=dB ? chartA : chartB;
-        const currChart = dA<=dB ? chartB : chartA;
-        merged = mergeTwoCharts(prevChart, currChart);
+        const [prevC, currC] = mainUsed;
+        if(mainKind === 'narrative'){
+          merged = mergeTwoNarrativeReports(prevC.narrative, currC.narrative);
+          merged.assessmentsGiven = currC.assessmentNames;
+        } else {
+          const rowsPrev = await extractRowsFromPDF(prevC.file);
+          const rowsCurr = await extractRowsFromPDF(currC.file);
+          merged = mergeTwoCharts(parseChart(rowsPrev), parseChart(rowsCurr));
+        }
+        summary.push(`Main assessment: <strong>${escapeAttr(prevC.file.name)}</strong> → <strong>${escapeAttr(currC.file.name)}</strong> (compared)`);
+      }
+      dataset = merged;
+      document.getElementById('preAssessmentToggle').checked = !!dataset.singleChartMode;
+      renderMeta();
+      renderTable();
+
+      leftovers = classified.filter(c=>!mainUsed.includes(c));
+      if(mainSkipped.length){
+        summary.push(`(${mainSkipped.length} extra main-format file(s) fell in between the dates used and were set aside — see below)`);
       }
     } else {
-      const only = filesChosen.A || filesChosen.B;
-      const rows = await extractRowsFromPDF(only);
-
-      const narrative = parseNarrativeReport(rows);
-      if(narrative && (narrative.mastered.length || narrative.fallbackCategories.length)){
-        merged = foldNarrativeSingle(narrative);
-        merged.singleChartMode = true;
-        merged.assessmentsGiven = guessAssessmentNamesFromFilename(only.name);
-      } else {
-        const chart = parseChart(rows);
-        if(chart.mode==='comparison'){
-          merged = foldComparisonChart(chart);
-        } else {
-          // single assessment only, no comparison available -> pre-assessment case
-          merged = {studentName:chart.studentName, prevScore:'', prevDate:'',
-                     currScore:chart.scores[0]||'', currDate:chart.dates[0]||'',
-                     categories: chart.categories.map(c=>({name:c.name, topics:c.topics.map(t=>({name:t.name, prev:null, curr:t.percent}))})),
-                     singleChartMode:true};
-        }
-      }
+      // nothing looked like a "main" assessment — leave Step 1 empty, everything becomes extras
+      leftovers = classified.slice();
+      summary.push(`No main grade-level assessment detected among these files — everything below went into Additional assessments instead.`);
     }
-    dataset = merged;
-    statusEl.textContent = 'Analyzed. Review the details below — fix anything that looks off.';
-    statusEl.className = 'status ok';
+
+    // group leftovers into additional-assessment cards, by detected label
+    const groups = new Map(); // label -> classified[]
+    leftovers.forEach((c,i)=>{
+      const label = (c.kind==='narrative' && c.assessmentNames[0]) ? c.assessmentNames[0]
+                    : `Additional Assessment ${extraCharts.length + groups.size + 1}`;
+      if(!groups.has(label)) groups.set(label, []);
+      groups.get(label).push(c);
+    });
+
+    groups.forEach((files, label)=>{
+      files.sort(byDate);
+      const built = files.length === 1 ? buildCardFromSingle(files[0]) : buildCardFromPair(files[0], files[files.length-1]);
+      const card = {
+        id: ++extraCounter, label, prevScore: built.prevScore, score: built.score,
+        topics: built.topics, _narrativeCurr: built.narrativeCurr,
+        currFileName: files[files.length-1].file.name,
+        prevFileName: files.length>1 ? files[0].file.name : ''
+      };
+      extraCharts.push(card);
+      if(built.studentName && !document.getElementById('studentName').value){
+        document.getElementById('studentName').value = firstNameOf(built.studentName);
+      }
+      summary.push(files.length===1
+        ? `Additional: <strong>${escapeAttr(label)}</strong> — ${escapeAttr(files[0].file.name)}`
+        : `Additional: <strong>${escapeAttr(label)}</strong> — ${escapeAttr(files[0].file.name)} → ${escapeAttr(files[files.length-1].file.name)} (compared)`);
+    });
+
+    if(unreadable.length){
+      summary.push(`Could not auto-read: ${unreadable.map(escapeAttr).join(', ')} — likely the raw checkbox-style checkup PDF. Add those by hand if needed.`);
+    }
+
     revealSteps();
-    document.getElementById('preAssessmentToggle').checked = !!dataset.singleChartMode;
-    renderMeta();
-    renderTable();
+    renderExtra();
+    if(groups.size) document.getElementById('extraDetails').open = true;
+
+    statusEl.innerHTML = `Sorted ${classified.length} file(s). Review below — everything is editable if something landed in the wrong place.<div class="sort-summary"><ul>${summary.map(s=>`<li>${s}</li>`).join('')}</ul></div>`;
+    statusEl.className = 'status ok';
   } catch(e){
     console.error(e);
-    statusEl.textContent = 'Could not analyze that PDF automatically. Use "build table manually" instead, or try re-exporting from Radius.';
+    statusEl.textContent = 'Could not analyze those PDFs automatically. Use "build table manually" instead, or try re-exporting from Radius.';
     statusEl.className = 'status err';
   }
 });
@@ -1008,18 +1125,18 @@ function renderMeta(){
 
 function updateScoreChip(){
   const wrap = document.getElementById('scoreChipWrap');
-  const pv = parseFloat(dataset.prevScore);
-  const cv = parseFloat(dataset.currScore);
-  if(isNaN(pv) && isNaN(cv)){ wrap.innerHTML=''; return; }
+  const pv = toComparableNum(dataset.prevScore);
+  const cv = toComparableNum(dataset.currScore);
+  if(pv===null && cv===null){ wrap.innerHTML=''; return; }
   let deltaHtml = '';
-  if(!isNaN(pv) && !isNaN(cv)){
+  if(pv!==null && cv!==null){
     const d = Math.round((cv-pv)*10)/10;
     const cls = d>0?'pos':(d<0?'neg':'flat');
     deltaHtml = `<span class="delta ${cls}">${d>0?'+':''}${d}%-pt</span>`;
   }
   wrap.innerHTML = `<div class="score-chip">
-    <span>${isNaN(pv)?'—':dataset.prevScore}</span><span class="arrow">→</span>
-    <span>${isNaN(cv)?'—':dataset.currScore}</span> ${deltaHtml}
+    <span>${pv===null?'—':fracLabelToPct(dataset.prevScore)}</span><span class="arrow">→</span>
+    <span>${cv===null?'—':fracLabelToPct(dataset.currScore)}</span> ${deltaHtml}
   </div>`;
 }
 
@@ -1153,7 +1270,7 @@ let extraCounter = 0;
 
 function addExtraCard(){
   extraCounter++;
-  extraCharts.push({id:extraCounter, label: extraCharts.length===0 ? 'Numerical Fluency Assessment' : 'Additional Assessment', prevScore:'', score:'', topics:[], _narrativeCurr:null});
+  extraCharts.push({id:extraCounter, label: extraCharts.length===0 ? 'Numerical Fluency Assessment' : 'Additional Assessment', prevScore:'', score:'', topics:[], _narrativeCurr:null, currFileName:'', prevFileName:''});
 }
 
 document.getElementById('addExtraBtn').addEventListener('click', ()=>{
@@ -1218,14 +1335,22 @@ function renderExtra(){
           <button class="tag-del delExtraBtn" data-id="${card.id}" title="Remove this assessment" style="margin-bottom:8px;">✕ Remove</button>
         </div>
         <div class="upload-grid" style="margin-bottom:10px;">
-          <label class="drop" style="padding:10px;">
-            <div class="sub" style="margin-top:0;">Current report PDF</div>
-            <input type="file" accept="application/pdf" class="extraFile" data-id="${card.id}">
-          </label>
-          <label class="drop" style="padding:10px;">
-            <div class="sub" style="margin-top:0;">Previous report PDF (optional — for a comparison email)</div>
-            <input type="file" accept="application/pdf" class="extraFilePrev" data-id="${card.id}">
-          </label>
+          <div class="drop-wrap${card.currFileName ? ' filled' : ''}">
+            <label class="drop" style="padding:10px;">
+              <div class="sub" style="margin-top:0;">Current report PDF</div>
+              <div class="filename" style="font-size:12.5px;">${card.currFileName ? escapeAttr(card.currFileName) : 'Drag a PDF here, or click to choose'}</div>
+              <input type="file" accept="application/pdf" class="extraFile" data-id="${card.id}">
+            </label>
+            <button type="button" class="drop-clear extraClearFile" data-id="${card.id}" title="Remove this file">✕</button>
+          </div>
+          <div class="drop-wrap${card.prevFileName ? ' filled' : ''}">
+            <label class="drop" style="padding:10px;">
+              <div class="sub" style="margin-top:0;">Previous report PDF (optional — for a comparison email)</div>
+              <div class="filename" style="font-size:12.5px;">${card.prevFileName ? escapeAttr(card.prevFileName) : 'Drag a PDF here, or click to choose'}</div>
+              <input type="file" accept="application/pdf" class="extraFilePrev" data-id="${card.id}">
+            </label>
+            <button type="button" class="drop-clear extraClearFilePrev" data-id="${card.id}" title="Remove this file">✕</button>
+          </div>
         </div>
         <div class="extraStatus status" data-id="${card.id}"></div>
         <table class="results" style="margin-top:8px;">
@@ -1298,13 +1423,51 @@ function renderExtra(){
     });
   });
 
-  // CURRENT report upload
+  // drag-and-drop for both file slots on every card (class-based, not id-based,
+  // since these re-render on every change)
+  host.querySelectorAll('.drop-wrap').forEach(wrap=>{
+    const label = wrap.querySelector('label.drop');
+    const input = label.querySelector('input[type=file]');
+    label.addEventListener('dragover', e=>{ e.preventDefault(); label.classList.add('dragging'); });
+    label.addEventListener('dragleave', ()=> label.classList.remove('dragging'));
+    label.addEventListener('drop', e=>{
+      e.preventDefault();
+      label.classList.remove('dragging');
+      const file = e.dataTransfer.files && e.dataTransfer.files[0];
+      if(file){
+        const dt = new DataTransfer();
+        dt.items.add(file);
+        input.files = dt.files;
+        input.dispatchEvent(new Event('change', {bubbles:true}));
+      }
+    });
+  });
+
+  host.querySelectorAll('.extraClearFile').forEach(el=>el.addEventListener('click', e=>{
+    e.preventDefault(); e.stopPropagation();
+    const card = extraCharts.find(c=>c.id===+e.target.dataset.id);
+    card.currFileName = '';
+    card.topics = [];
+    card.score = '';
+    card._narrativeCurr = null;
+    renderExtra();
+  }));
+  host.querySelectorAll('.extraClearFilePrev').forEach(el=>el.addEventListener('click', e=>{
+    e.preventDefault(); e.stopPropagation();
+    const card = extraCharts.find(c=>c.id===+e.target.dataset.id);
+    card.prevFileName = '';
+    card.prevScore = '';
+    card.topics.forEach(t=>{ t.prev = ''; });
+    renderExtra();
+  }));
+
   // CURRENT report upload
   host.querySelectorAll('.extraFile').forEach(el=>el.addEventListener('change', async e=>{
     const card = extraCharts.find(c=>c.id===+e.target.dataset.id);
     const statusEl = host.querySelector(`.extraStatus[data-id="${card.id}"]`);
     const file = e.target.files[0];
     if(!file) return;
+    card.currFileName = file.name;
     statusEl.textContent = 'Reading current report...';
     statusEl.className = 'status';
     try{
@@ -1350,6 +1513,7 @@ function renderExtra(){
     const statusEl = host.querySelector(`.extraStatus[data-id="${card.id}"]`);
     const file = e.target.files[0];
     if(!file) return;
+    card.prevFileName = file.name;
     statusEl.textContent = 'Reading previous report...';
     statusEl.className = 'status';
     try{
@@ -1418,14 +1582,75 @@ async function parseAnyAssessmentFile(file){
   const chartTopics = [];
   chart.categories.forEach(cat=>cat.topics.forEach(t=>chartTopics.push({name:t.name, value:t.percent})));
   if(chartTopics.length){
-    return {kind:'chart', studentName:chart.studentName, overall:chart.scores[0]||'', topics:chartTopics};
+    return {kind:'chart', file, studentName:chart.studentName, overall:chart.scores[0]||'',
+            topics:chartTopics, dateRaw:chart.dates[0]||'', assessmentNames:[]};
   }
 
   const narrative = parseNarrativeReport(rows);
   if(narrative && (narrative.mastered.length || narrative.fallbackCategories.length)){
-    return {kind:'narrative', studentName:narrative.studentName, narrative};
+    return {kind:'narrative', file, studentName:narrative.studentName, narrative,
+            dateRaw:narrative.date||'', assessmentNames:guessAssessmentNamesFromFilename(file.name)};
   }
   return null;
+}
+
+/* Builds a card's topics/score from ONE parsed file (snapshot, no comparison). */
+function buildCardFromSingle(parsed){
+  if(parsed.kind==='chart'){
+    return {
+      topics: parsed.topics.map(nt=>({name:nt.name, curr:nt.value, prev:'', checked:true})),
+      score: parsed.overall || '', prevScore:'',
+      studentName: parsed.studentName, narrativeCurr:null
+    };
+  }
+  const nr = parsed.narrative;
+  const topics = nr.mastered.length
+    ? nr.mastered.map(name=>({name, curr:'Mastered', prev:'', checked:true}))
+    : nr.fallbackCategories.map(c=>({name:c.name, curr:fracLabelToPct(c.num,c.den), prev:'', checked:true}));
+  return {
+    topics, score: nr.overall ? fracLabelToPct(nr.overall.num, nr.overall.den) : '', prevScore:'',
+    studentName: nr.studentName, narrativeCurr: nr
+  };
+}
+
+/* Builds a card's topics/score from a prev+curr pair (same rules as the main flow's comparison). */
+function buildCardFromPair(prevParsed, currParsed){
+  if(currParsed.kind==='chart'){
+    const prevByName = new Map(prevParsed.topics.map(t=>[t.name.toLowerCase(), t.value]));
+    const used = new Set();
+    const topics = currParsed.topics.map(t=>{
+      const key = t.name.toLowerCase();
+      const p = prevByName.get(key);
+      if(p) used.add(key);
+      return {name:t.name, curr:t.value, prev:p||'', checked:true};
+    });
+    prevParsed.topics.forEach(t=>{
+      if(!used.has(t.name.toLowerCase())) topics.push({name:t.name, prev:t.value, curr:'', checked:false});
+    });
+    return {topics, score: currParsed.overall||'', prevScore: prevParsed.overall||'',
+             studentName: currParsed.studentName || prevParsed.studentName, narrativeCurr:null};
+  }
+  const currNr = currParsed.narrative, prevNr = prevParsed.narrative;
+  let topics;
+  if(currNr.mastered.length || prevNr.mastered.length){
+    const prevMastered = new Set(prevNr.mastered.map(s=>s.toLowerCase()));
+    const prevInProgress = new Set(prevNr.inProgress.map(s=>s.toLowerCase()));
+    topics = currNr.mastered.filter(name=>!prevMastered.has(name.toLowerCase())).map(name=>{
+      const key = name.toLowerCase();
+      return {name, curr:'Mastered', prev: prevInProgress.has(key) ? 'Not yet' : '', checked:true};
+    });
+  } else {
+    const prevFlat = new Map(prevNr.fallbackCategories.map(c=>[c.name.toLowerCase(), c]));
+    topics = currNr.fallbackCategories.map(c=>{
+      const m = prevFlat.get(c.name.toLowerCase());
+      return {name:c.name, curr:fracLabelToPct(c.num,c.den), prev: m?fracLabelToPct(m.num,m.den):'', checked:true};
+    });
+  }
+  return {
+    topics, score: currNr.overall?fracLabelToPct(currNr.overall.num,currNr.overall.den):'',
+    prevScore: prevNr.overall?fracLabelToPct(prevNr.overall.num,prevNr.overall.den):'',
+    studentName: currNr.studentName || prevNr.studentName, narrativeCurr: currNr
+  };
 }
 
 function escapeAttr(s){
@@ -1447,18 +1672,20 @@ document.getElementById('genBtn').addEventListener('click', ()=>{
   const staff = document.getElementById('staffName').value.trim() || '[Your name]';
   const pr = pronounSet(document.getElementById('pronoun').value);
   const prevPlan = document.getElementById('prevPlan').value.trim();
-  const currScore = dataset.currScore || document.getElementById('currScore').value.trim();
-  const prevScore = dataset.prevScore || document.getElementById('prevScore').value.trim();
+  const currScoreRaw = dataset.currScore || document.getElementById('currScore').value.trim();
+  const prevScoreRaw = dataset.prevScore || document.getElementById('prevScore').value.trim();
+  const currScore = fracLabelToPct(currScoreRaw);
+  const prevScore = fracLabelToPct(prevScoreRaw);
   const preMode = !!dataset.singleChartMode;
 
-  const pv = parseFloat(prevScore), cv = parseFloat(currScore);
+  const pv = toComparableNum(prevScoreRaw), cv = toComparableNum(currScoreRaw);
   let scoreLine = '';
-  if(!preMode && !isNaN(pv) && !isNaN(cv)){
+  if(!preMode && pv!==null && cv!==null){
     const d = Math.round((cv-pv)*10)/10;
     if(d>0) scoreLine = `On ${pr.poss} most recent attempt, ${pr.subj} improved ${pr.poss} score by ${d}%-points, scoring ${currScore} overall.`;
     else if(d<0) scoreLine = `On ${pr.poss} most recent attempt, ${pr.subj} scored ${currScore} overall.`;
     else scoreLine = `On ${pr.poss} most recent attempt, ${pr.subj} held steady, scoring ${currScore} overall.`;
-  } else if(!isNaN(cv)){
+  } else if(cv!==null){
     scoreLine = preMode
       ? `${student} scored ${currScore} overall on ${pr.poss} initial assessment.`
       : `${student} scored ${currScore} overall on this assessment.`;
@@ -1512,9 +1739,9 @@ document.getElementById('genBtn').addEventListener('click', ()=>{
 
       let line = `On the ${c.label.trim()}`;
       if(hasComparison && c.prevScore.trim() && c.score.trim()){
-        line += `, ${pr.subj} moved from ${c.prevScore.trim()} to ${c.score.trim()} overall`;
+        line += `, ${pr.subj} moved from ${fracLabelToPct(c.prevScore.trim())} to ${fracLabelToPct(c.score.trim())} overall`;
       } else if(c.score.trim()){
-        line += `, ${pr.subj} scored ${c.score.trim()} overall`;
+        line += `, ${pr.subj} scored ${fracLabelToPct(c.score.trim())} overall`;
       }
       line += '.';
       if(checkedImproved.length){
