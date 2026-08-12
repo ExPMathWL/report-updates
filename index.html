@@ -113,6 +113,7 @@
   .upload-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
   @media (max-width:640px){.upload-grid{grid-template-columns:1fr;}}
   .drop{
+    display:block;
     border:1.5px dashed var(--grey-light);
     border-radius:8px;
     padding:20px 16px;
@@ -938,6 +939,11 @@ function guessAssessmentNamesFromFilename(filename){
   if(!filename) return [];
   let s = filename.replace(/\.pdf$/i, '');
   s = s.replace(/^Assessment_Report_|^Mastery_Report_/i, '');
+  s = s.replace(/^Assessment Report |^Mastery Report /i, '');
+  // filenames aren't consistently underscore-separated (some come through with
+  // literal spaces instead, e.g. "Mateo Garcia__Level 2_Level 2__08_12_2026 04_24") —
+  // normalize everything to underscores first so the rest of this works either way.
+  s = s.replace(/\s+/g, '_');
   const dblIdx = s.indexOf('__');
   if(dblIdx === -1) return [];
   s = s.slice(dblIdx+2);
