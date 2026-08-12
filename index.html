@@ -370,6 +370,7 @@
         <div class="field"><label>Current date</label><input type="text" id="currDate" placeholder="e.g. 8/5/2026"></div>
         <div class="field"><label>Previous learning plan / level (optional)</label><input type="text" id="prevPlan" placeholder="e.g. Level 7"></div>
         <div class="field"><label>Your name (sender)</label><input type="text" id="staffName" placeholder="e.g. Rebecca"></div>
+        <div class="field" style="grid-column:1 / -1;"><label>Assessments given (auto-detected where possible)</label><input type="text" id="assessmentsGiven" placeholder="e.g. Level 3, Level 3 Extension, Numerical Fluency Addition and Subtraction"></div>
       </div>
       <label style="display:flex;align-items:center;gap:8px;font-size:13.5px;font-weight:600;margin-bottom:10px;cursor:pointer;">
         <input type="checkbox" id="preAssessmentToggle">
@@ -839,6 +840,44 @@ function parseFlexDate(s){
   return new Date(0);
 }
 
+/* Just the first name — student names auto-filled from a PDF come through as
+   the student's full name ("Mariah Kammerer"), but the field is first-name-only. */
+function firstNameOf(fullName){
+  if(!fullName) return '';
+  return String(fullName).trim().split(/\s+/)[0];
+}
+
+/* Radius filenames for the "Assessment Report" / "Mastery Report" PDFs encode
+   which assessments were given, e.g.
+   "Assessment_Report_Jack_Harris__Numerical_Fluency_Addition_and_Subtraction_
+   Numerical_Fluency_Multiplication_and_Division_Level_3_Level_3_Extension_08_11_2026_03_43.pdf"
+   Best-effort only — always shown in an editable field, never trusted blindly. */
+function guessAssessmentNamesFromFilename(filename){
+  if(!filename) return [];
+  let s = filename.replace(/\.pdf$/i, '');
+  s = s.replace(/^Assessment_Report_|^Mastery_Report_/i, '');
+  const dblIdx = s.indexOf('__');
+  if(dblIdx === -1) return [];
+  s = s.slice(dblIdx+2);
+  // strip a trailing MM_DD_YYYY_HH_MM timestamp, and any trailing double-underscore before it
+  s = s.replace(/_{1,2}\d{1,2}_\d{1,2}_\d{4}_\d{1,2}_\d{1,2}$/, '');
+  if(!s) return [];
+
+  const anchorRe = /(Numerical_Fluency|Level_\d+|Computation|High_School)/g;
+  const starts = [];
+  let m;
+  while((m = anchorRe.exec(s))){ starts.push(m.index); }
+  if(!starts.length) return [s.replace(/_/g,' ')];
+
+  const segments = [];
+  for(let i=0;i<starts.length;i++){
+    const end = i+1<starts.length ? starts[i+1] : s.length;
+    const seg = s.slice(starts[i], end).replace(/_+$/,'');
+    if(seg) segments.push(seg.replace(/_/g,' '));
+  }
+  return [...new Set(segments)]; // dedupe (e.g. Mastery Reports listing "Level 3" twice)
+}
+
 /* ---------------------------------------------------------
    PARSE BUTTON
 --------------------------------------------------------- */
@@ -874,7 +913,9 @@ document.getElementById('parseBtn').addEventListener('click', async ()=>{
         const dA = parseFlexDate(narrA.date), dB = parseFlexDate(narrB.date);
         const prevReport = dA<=dB ? narrA : narrB;
         const currReport = dA<=dB ? narrB : narrA;
+        const currFile = dA<=dB ? filesChosen.B : filesChosen.A;
         merged = mergeTwoNarrativeReports(prevReport, currReport);
+        merged.assessmentsGiven = guessAssessmentNamesFromFilename(currFile.name);
       } else {
         const chartA = parseChart(rowsA);
         const chartB = parseChart(rowsB);
@@ -891,6 +932,7 @@ document.getElementById('parseBtn').addEventListener('click', async ()=>{
       if(narrative && (narrative.mastered.length || narrative.fallbackCategories.length)){
         merged = foldNarrativeSingle(narrative);
         merged.singleChartMode = true;
+        merged.assessmentsGiven = guessAssessmentNamesFromFilename(only.name);
       } else {
         const chart = parseChart(rows);
         if(chart.mode==='comparison'){
@@ -929,11 +971,12 @@ function revealSteps(){
    RENDER META
 --------------------------------------------------------- */
 function renderMeta(){
-  document.getElementById('studentName').value = dataset.studentName || '';
+  document.getElementById('studentName').value = firstNameOf(dataset.studentName) || '';
   document.getElementById('prevScore').value = dataset.prevScore || '';
   document.getElementById('prevDate').value = dataset.prevDate || '';
   document.getElementById('currScore').value = dataset.currScore || '';
   document.getElementById('currDate').value = dataset.currDate || '';
+  document.getElementById('assessmentsGiven').value = (dataset.assessmentsGiven || []).join(', ');
   updateScoreChip();
   ['studentName','prevScore','prevDate','currScore','currDate'].forEach(id=>{
     document.getElementById(id).oninput = ()=>{
@@ -1268,7 +1311,7 @@ function renderExtra(){
           : nr.fallbackCategories.map(c=>({name:c.name, curr:fracLabelToPct(c.num,c.den), prev:'', checked:true}));
         if(nr.overall) card.score = fracLabelToPct(nr.overall.num, nr.overall.den);
         if(nr.studentName && !document.getElementById('studentName').value){
-          document.getElementById('studentName').value = nr.studentName;
+          document.getElementById('studentName').value = firstNameOf(nr.studentName);
         }
         statusEl.textContent = `Analyzed ${card.topics.length} row(s) — review below.`;
         statusEl.className = 'status ok';
@@ -1423,6 +1466,15 @@ document.getElementById('genBtn').addEventListener('click', ()=>{
     }
   });
   const planTopics = document.getElementById('planTopics').value.split('\n').map(s=>s.trim()).filter(Boolean);
+  const assessmentsGivenRaw = document.getElementById('assessmentsGiven').value.trim();
+  const assessmentsGiven = assessmentsGivenRaw ? assessmentsGivenRaw.split(',').map(s=>s.trim()).filter(Boolean) : [];
+
+  function listJoin(arr){
+    if(arr.length===0) return '';
+    if(arr.length===1) return arr[0];
+    if(arr.length===2) return `${arr[0]} and ${arr[1]}`;
+    return arr.slice(0,-1).join(', ') + ', and ' + arr[arr.length-1];
+  }
 
   // additional assessments (Numerical Fluency, etc.) — comparison-aware
   const extraNotes = extraCharts
@@ -1438,55 +1490,57 @@ document.getElementById('genBtn').addEventListener('click', ()=>{
 
       if(!c.score.trim() && !checkedImproved.length) return null;
 
-      let line = `${student} also completed the ${c.label.trim()}`;
+      let line = `On the ${c.label.trim()}`;
       if(hasComparison && c.prevScore.trim() && c.score.trim()){
-        line += `, moving from ${c.prevScore.trim()} to ${c.score.trim()} overall`;
+        line += `, ${pr.subj} moved from ${c.prevScore.trim()} to ${c.score.trim()} overall`;
       } else if(c.score.trim()){
-        line += `, scoring ${c.score.trim()} overall`;
+        line += `, ${pr.subj} scored ${c.score.trim()} overall`;
       }
       line += '.';
       if(checkedImproved.length){
         line += hasComparison
-          ? ` Improved on: ${checkedImproved.join(', ')}.`
-          : ` Highlights: ${checkedImproved.join(', ')}.`;
+          ? ` Newly mastered: ${listJoin(checkedImproved)}.`
+          : ` Highlights included ${listJoin(checkedImproved)}.`;
       }
       return line;
     })
     .filter(Boolean);
 
   let body = `Hi ${parent}!\n\n`;
-  body += `This is ${staff} with Mathnasium. ${student} recently took an assessment and I wanted to update you on ${pr.poss} progress.\n\n`;
+
+  const assessmentPhrase = assessmentsGiven.length
+    ? (assessmentsGiven.length===1 ? `a ${assessmentsGiven[0]} assessment` : `the ${listJoin(assessmentsGiven)} assessments`)
+    : 'an assessment';
+  body += `This is ${staff} with Mathnasium. ${student} recently completed ${assessmentPhrase}, and I wanted to share an update on ${pr.poss} progress. `;
   if(!preMode && prevPlan){
-    body += `In the previous update we reported that ${student} had been working on ${pr.poss} ${prevPlan} lesson plan. `;
+    body += `${pr.subj[0].toUpperCase()+pr.subj.slice(1)} had been working on ${pr.poss} ${prevPlan} lesson plan since the last update. `;
   }
-  body += `${scoreLine}\n\n`;
-  body += `I've attached a chart to this email which provides a skill-by-skill breakdown of ${pr.poss} assessment results.\n\n`;
+  body += `${scoreLine} A skill-by-skill breakdown is attached to this email.\n\n`;
 
   if(preMode && mastery.length){
-    body += `${student[0].toUpperCase()+student.slice(1)} showed mastery of the following topics:\n\n`;
+    body += `${student} showed mastery of the following topics:\n\n`;
     mastery.forEach(t=> body += `* ${t}\n`);
     body += `\n`;
   }
   if(!preMode && improved.length){
-    body += `Here are the topics in which ${pr.subj} improved:\n\n`;
+    body += `${student} improved on the following topics:\n\n`;
     improved.forEach(t=> body += `* ${t}\n`);
     body += `\n`;
   }
   if(!preMode && newTopics.length){
-    body += `${student} has also moved up to a new level, so the assessment introduced some new topics ${pr.subj} ${pr.be} now being tested on:\n\n`;
+    body += `${student} has also moved up to a new level, introducing some new topics ${pr.subj} ${pr.be} now being tested on:\n\n`;
     newTopics.forEach(t=> body += `* ${t}\n`);
     body += `\n`;
   }
   if(extraNotes.length){
-    extraNotes.forEach(line=> body += `${line}\n`);
-    body += `\n`;
+    body += extraNotes.join('\n\n') + '\n\n';
   }
   if(planTopics.length){
-    body += `We've created an updated lesson plan based on ${pr.poss} most recent results. ${pr.subj[0].toUpperCase()+pr.subj.slice(1)} will be working on these topics:\n\n`;
+    body += `Based on these results, we've built an updated learning plan. ${pr.subj[0].toUpperCase()+pr.subj.slice(1)} will be focusing on:\n\n`;
     planTopics.forEach(t=> body += `* ${t}\n`);
     body += `\n`;
   }
-  body += `Built into ${pr.poss} next learning plan is a checkpoint at which ${pr.subj} will be reassessed and another update will be sent out. As always, please let us know if you have any questions, comments, or concerns. Thank you, ${parent}!\n\n`;
+  body += `A reassessment is built into the next learning plan, so we'll follow up with another update once that's complete. In the meantime, please don't hesitate to reach out with any questions. Thank you!\n\n`;
   body += `Best,\n${staff}\nMathnasium of West Linn`;
 
   document.getElementById('emailOut').value = body;
