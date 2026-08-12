@@ -1578,6 +1578,18 @@ function renderExtra(){
 async function parseAnyAssessmentFile(file){
   const rows = await extractRowsFromPDF(file);
 
+  // Check the narrative report format first — it's gated on an explicit "Assessment
+  // Report"/"Mastery Report" title match, which is a far more reliable signal than
+  // "does the percentage-chart parser happen to find a percent-shaped token somewhere."
+  // Narrative reports often end with a "N / M P%" summary line, which is just enough
+  // to fool the chart parser into thinking it found real data if it runs first —
+  // producing a garbled table where every paragraph line becomes its own category.
+  const narrative = parseNarrativeReport(rows);
+  if(narrative && (narrative.mastered.length || narrative.fallbackCategories.length)){
+    return {kind:'narrative', file, studentName:narrative.studentName, narrative,
+            dateRaw:narrative.date||'', assessmentNames:guessAssessmentNamesFromFilename(file.name)};
+  }
+
   const chart = parseChart(rows);
   const chartTopics = [];
   chart.categories.forEach(cat=>cat.topics.forEach(t=>chartTopics.push({name:t.name, value:t.percent})));
@@ -1586,11 +1598,6 @@ async function parseAnyAssessmentFile(file){
             topics:chartTopics, dateRaw:chart.dates[0]||'', assessmentNames:[]};
   }
 
-  const narrative = parseNarrativeReport(rows);
-  if(narrative && (narrative.mastered.length || narrative.fallbackCategories.length)){
-    return {kind:'narrative', file, studentName:narrative.studentName, narrative,
-            dateRaw:narrative.date||'', assessmentNames:guessAssessmentNamesFromFilename(file.name)};
-  }
   return null;
 }
 
