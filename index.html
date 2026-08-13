@@ -446,7 +446,7 @@
         <div class="field"><label>Pronoun</label>
           <select id="pronoun">
             <option value="they">they / them / their</option>
-            <option value="she">she / her / her</option>
+            <option value="she">she / her / hers</option>
             <option value="he">he / him / his</option>
           </select>
         </div>
@@ -479,13 +479,13 @@
           <span>We handle scheduling through AppointyM<span class="toggle-note">Unchecked: ask the family what times work instead of mentioning the booking system.</span></span>
         </label>
         <label class="toggle-row"><input type="checkbox" id="rfaLearningPlan" checked>
-          <span>We send a Learning Plan document<span class="toggle-note">MEV does, West Linn doesn't — uncheck for centers that skip this.</span></span>
+          <span>We send a Learning Plan document<span class="toggle-note">Mentions the attached Learning Plan document in the email.</span></span>
         </label>
         <label class="toggle-row"><input type="checkbox" id="rfaDayInLife">
-          <span>Mention the "day at Mathnasium" program overview<span class="toggle-note">Added as a one-line pointer to the attached Parent Pack / Program Overview, not the full explainer. Keeps the email shorter.</span></span>
+          <span>Mention the "day at Mathnasium" program overview<span class="toggle-note">Adds a one-line mention about an attached program overview.</span></span>
         </label>
         <label class="toggle-row"><input type="checkbox" id="rfaHomework">
-          <span>Include homework policy explainer<span class="toggle-note">Off by default since it's already covered in the enrollment documents.</span></span>
+          <span>Include homework policy explanation</span>
         </label>
       </div>
     </div>
@@ -1786,6 +1786,19 @@ document.querySelectorAll('input[name="emailMode"]').forEach(radio=>{
     }
   });
 });
+
+/* Center-based defaults for the RFA toggles: MEV schedules through AppointyM
+   and sends a Learning Plan; West Linn mentions the day-at-Mathnasium
+   overview instead. Homework policy isn't center-dependent, so it's left
+   alone here. Applied on page load and whenever the center changes. */
+function applyCenterDefaults(){
+  const isMev = document.getElementById('emailCenter').value === 'MEV';
+  document.getElementById('rfaScheduling').checked = isMev;
+  document.getElementById('rfaLearningPlan').checked = isMev;
+  document.getElementById('rfaDayInLife').checked = !isMev;
+}
+document.getElementById('emailCenter').addEventListener('change', applyCenterDefaults);
+applyCenterDefaults();
 
 /* ---------------------------------------------------------
    BLURB LIBRARY (Risk-Free Assessment mode)
