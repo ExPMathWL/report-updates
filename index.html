@@ -207,7 +207,11 @@
   .btn-row{display:flex;gap:10px;margin-top:16px;align-items:center;flex-wrap:wrap;}
 
   .status{font-size:12.5px;color:var(--ink-soft);}
-  .status.err{color:var(--down);font-weight:600;}
+  .status.err{
+    color:var(--down);font-weight:700;
+    background:#fbeaea;border:1.5px solid var(--maroon);border-radius:6px;
+    padding:8px 12px;display:block;margin-top:6px;
+  }
   .status.ok{color:var(--up);font-weight:600;}
 
   .meta-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;}
@@ -365,15 +369,24 @@
     </div>
   </details>
 
-  <div class="mode-toggle" id="emailModeToggle">
-    <label class="active" id="modeLabelProgress">
-      <input type="radio" name="emailMode" value="progress" checked>
-      <span>Progress Update <span style="font-weight:400;">(existing family)</span></span>
-    </label>
-    <label id="modeLabelRfa">
-      <input type="radio" name="emailMode" value="rfa">
-      <span>Risk-Free Assessment <span style="font-weight:400;">(new lead)</span></span>
-    </label>
+  <div style="display:flex;gap:12px;align-items:stretch;flex-wrap:wrap;margin-top:20px;">
+    <div class="mode-toggle" id="emailModeToggle" style="margin-top:0;flex:1;min-width:280px;">
+      <label class="active" id="modeLabelProgress">
+        <input type="radio" name="emailMode" value="progress" checked>
+        <span>Progress Update <span style="font-weight:400;">(existing family)</span></span>
+      </label>
+      <label id="modeLabelRfa">
+        <input type="radio" name="emailMode" value="rfa">
+        <span>Risk-Free Assessment <span style="font-weight:400;">(new lead)</span></span>
+      </label>
+    </div>
+    <div class="field" style="min-width:160px;">
+      <label>Center</label>
+      <select id="emailCenter">
+        <option value="WL">West Linn</option>
+        <option value="MEV">East Vancouver</option>
+      </select>
+    </div>
   </div>
 
   <!-- STEP 1 -->
@@ -413,13 +426,6 @@
     <div class="step-body" style="border-top:1px solid var(--line);">
       <p class="desc">Anything that didn't get sorted into the main assessment above lands here automatically. You can also add or upload into a card by hand.</p>
       <div id="extraHost"></div>
-      <datalist id="assessmentPresets">
-        <option value="Numerical Fluency - Addition and Subtraction">
-        <option value="Numerical Fluency - Multiplication and Division">
-        <option value="Geometry Extension Assessment">
-        <option value="Computation Assessment (5th-8th)">
-        <option value="High School Fundamental Skills (9th-12th)">
-      </datalist>
       <div class="cat-add">
         <button class="btn-secondary btn-sm" id="addExtraBtn">+ Add another assessment</button>
       </div>
@@ -437,12 +443,6 @@
       <div class="meta-grid" style="margin-bottom:16px;">
         <div class="field"><label>Student first name</label><input type="text" id="studentName"></div>
         <div class="field"><label>Parent / guardian name</label><input type="text" id="parentName" placeholder="e.g. Kristine"></div>
-        <div class="field"><label>Center</label>
-          <select id="emailCenter">
-            <option value="WL">West Linn</option>
-            <option value="MEV">East Vancouver</option>
-          </select>
-        </div>
         <div class="field"><label>Pronoun</label>
           <select id="pronoun">
             <option value="they">they / them / their</option>
@@ -765,8 +765,8 @@ function parseNarrativeReport(rows){
     if(m){ dateStr = m[0]; break; }
   }
 
-  const mastered = [];
-  const inProgress = [];
+  const categories = []; // {name, num, den, mastered:[], inProgress:[]}
+  let currentCat = null;
   const fallbackCategories = []; // used only when there's no Strengths/Opportunities detail at all
   let overall = null;
   let pastHeader = false;
@@ -807,7 +807,10 @@ function parseNarrativeReport(rows){
     if(cm && !hasS){
       const name = cm[1].trim();
       if(!/^(Topics|Strengths|Opportunities|To Do|Mastered|Skills Mastered)$/i.test(name)){
-        inBlock = false; splitX = null; return;
+        currentCat = {name, num:cm[2], den:cm[3], mastered:[], inProgress:[]};
+        categories.push(currentCat);
+        inBlock = false; splitX = null;
+        return;
       }
     }
     if(hasS){
@@ -820,20 +823,41 @@ function parseNarrativeReport(rows){
       }
       return;
     }
-    if(inBlock){
+    if(inBlock && currentCat){
       if(splitX===null){
-        mastered.push(l);
+        currentCat.mastered.push(l);
       } else {
         const left = r.filter(i=>i.x < splitX).map(i=>i.text).join(' ').trim();
         const right = r.filter(i=>i.x >= splitX).map(i=>i.text).join(' ').trim();
-        if(left) mastered.push(left);
-        if(right) inProgress.push(right);
+        if(left) currentCat.mastered.push(left);
+        if(right) currentCat.inProgress.push(right);
       }
     }
   });
 
   return {mode: isMastery ? 'mastery' : 'assessment', studentName, date:dateStr,
-          mastered, inProgress, fallbackCategories, overall};
+          categories, fallbackCategories, overall};
+}
+
+/* Numerical Fluency shows up as its own category ("Addition and Subtraction
+   Fact Fluency" / "Multiplication and Division Fact Fluency") inside a
+   grouped Assessment Report alongside the main Level assessment. It should
+   read as its own assessment in the email, not get folded into the main
+   skill list, so these helpers separate it out. */
+function isNfCategory(name){ return /Fact Fluency/i.test(name); }
+function nfCategoryLabel(name){
+  if(/Addition and Subtraction/i.test(name)) return 'Numerical Fluency Addition and Subtraction';
+  if(/Multiplication and Division/i.test(name)) return 'Numerical Fluency Multiplication and Division';
+  return name;
+}
+function narrativeMasteredFlat(report, excludeNf){
+  return report.categories.filter(c=>!excludeNf || !isNfCategory(c.name)).flatMap(c=>c.mastered);
+}
+function narrativeInProgressFlat(report, excludeNf){
+  return report.categories.filter(c=>!excludeNf || !isNfCategory(c.name)).flatMap(c=>c.inProgress);
+}
+function narrativeNfCategories(report){
+  return report.categories.filter(c=>isNfCategory(c.name));
 }
 
 /* Merge a comparison-mode chart (topics appear twice: pre then post) into prev/curr pairs */
@@ -908,29 +932,36 @@ function fracLabelToPct(numOrStr, den){
    "Assessment Report" / "Mastery Report" format. Rather than category
    fractions, this lists the individual concepts pulled from each report's
    "Strengths" (mastered) column. Overall scores are converted from "N/M"
-   fractions to percent, since that reads more naturally to parents. */
+   fractions to percent, since that reads more naturally to parents.
+   Numerical Fluency categories are pulled out separately (nfCategories)
+   rather than folded into the main topic list, since they read as their
+   own assessment in the email, not a skill within the main one. */
 function foldNarrativeSingle(report){
-  const topics = report.mastered.length
-    ? report.mastered.map(name=>({name, prev:null, curr:'Mastered'}))
+  const mastered = narrativeMasteredFlat(report, true);
+  const topics = mastered.length
+    ? mastered.map(name=>({name, prev:null, curr:'Mastered'}))
     : report.fallbackCategories.map(c=>({name:c.name, prev:null, curr:fracLabelToPct(c.num, c.den)}));
   return {
     studentName: report.studentName,
     prevScore:'', prevDate:'',
     currScore: report.overall ? fracLabelToPct(report.overall.num, report.overall.den) : '',
     currDate: report.date || '',
-    categories: [{name: report.mastered.length ? 'Mastered Concepts' : 'Skill Areas', topics}]
+    categories: [{name: mastered.length ? 'Mastered Concepts' : 'Skill Areas', topics}],
+    nfCategories: narrativeNfCategories(report)
   };
 }
 
 function mergeTwoNarrativeReports(prevReport, currReport){
-  const havesDetail = prevReport.mastered.length || currReport.mastered.length;
+  const currMasteredAll = narrativeMasteredFlat(currReport, true);
+  const prevMasteredAll = narrativeMasteredFlat(prevReport, true);
+  const havesDetail = prevMasteredAll.length || currMasteredAll.length;
   let topics;
 
   if(havesDetail){
-    const prevMastered = new Set(prevReport.mastered.map(s=>s.toLowerCase()));
-    const prevInProgress = new Set(prevReport.inProgress.map(s=>s.toLowerCase()));
+    const prevMastered = new Set(prevMasteredAll.map(s=>s.toLowerCase()));
+    const prevInProgress = new Set(narrativeInProgressFlat(prevReport, true).map(s=>s.toLowerCase()));
     topics = [];
-    currReport.mastered.forEach(name=>{
+    currMasteredAll.forEach(name=>{
       const key = name.toLowerCase();
       if(prevMastered.has(key)) return; // already mastered before — not a new achievement, skip
       if(prevInProgress.has(key)){
@@ -963,7 +994,8 @@ function mergeTwoNarrativeReports(prevReport, currReport){
     prevDate: prevReport.date || '',
     currScore: currReport.overall ? fracLabelToPct(currReport.overall.num, currReport.overall.den) : '',
     currDate: currReport.date || '',
-    categories: [{name: havesDetail ? 'Newly Mastered Concepts' : 'Skill Areas', topics}]
+    categories: [{name: havesDetail ? 'Newly Mastered Concepts' : 'Skill Areas', topics}],
+    nfCategories: narrativeNfCategories(currReport)
   };
 }
 
@@ -1005,9 +1037,10 @@ function ordinal(n){
    predictably enough to generate without needing to parse that (fragile,
    multi-column) description text out of the PDF itself. */
 function describeAssessmentName(name){
-  let m = name.match(/^Level (\d+) Extension$/i);
+  const base = name.replace(/\s+(A|B|Full)$/i, ''); // ignore the form tag for pattern matching only
+  let m = base.match(/^Level (\d+) Extension$/i);
   if(m) return `${name} (extends Level ${m[1]} into geometry and data/statistics for ${ordinal(+m[1])} grade)`;
-  m = name.match(/^Level (\d+)$/i);
+  m = base.match(/^Level (\d+)$/i);
   if(m) return `${name} (core skills through ${ordinal(+m[1])} grade)`;
   return name;
 }
@@ -1020,6 +1053,15 @@ function assessmentLabelFromCheckup(checkupText){
   const m = (checkupText||'').match(/(\d+)/);
   if(!m) return '';
   return describeAssessmentName(`Level ${m[1]}`);
+}
+
+/* Every grade-level-style assessment (Level N, Computation, HS Fundamentals,
+   Algebra Readiness) comes in A / B / Full forms — useful for staff to know
+   which form was given, meaningless to a parent reading the email. Strips
+   that trailing tag for parent-facing sentences only; the full label with
+   the form tag stays intact in the "Assessments given" field itself. */
+function forParentFacing(label){
+  return (label||'').replace(/\s+(A|B|Full)(?=\s*(\(|$))/i, '').trim();
 }
 
 function guessAssessmentNamesFromFilename(filename){
@@ -1038,7 +1080,7 @@ function guessAssessmentNamesFromFilename(filename){
   s = s.replace(/_{1,2}\d{1,2}_\d{1,2}_\d{4}_\d{1,2}_\d{1,2}$/, '');
   if(!s) return [];
 
-  const anchorRe = /(Numerical_Fluency|Level_\d+|Computation|High_School)/g;
+  const anchorRe = /(Numerical_Fluency|Level_\d+|Computation|High_School|HS_Fundamental|Algebra_Readiness)/g;
   const starts = [];
   let m;
   while((m = anchorRe.exec(s))){ starts.push(m.index); }
@@ -1082,7 +1124,7 @@ document.getElementById('parseBtn').addEventListener('click', async ()=>{
       return;
     }
 
-    const isMainNarrative = c => c.kind==='narrative' && c.assessmentNames.some(n=>/^(Level \d|Computation|High School)/i.test(n));
+    const isMainNarrative = c => c.kind==='narrative' && c.assessmentNames.some(n=>/^(Level \d|Computation|High School|HS Fundamental|Algebra Readiness)/i.test(n));
     const byDate = (a,b) => parseFlexDate(a.dateRaw) - parseFlexDate(b.dateRaw);
 
     const narrativeMain = classified.filter(isMainNarrative).sort(byDate);
@@ -1141,6 +1183,22 @@ document.getElementById('parseBtn').addEventListener('click', async ()=>{
       renderMeta();
       renderTable();
 
+      // Numerical Fluency comes bundled inside a grouped Assessment Report as its own
+      // category — split those out into their own Additional Assessment cards instead
+      // of leaving them mixed into the main skill list.
+      (merged.nfCategories || []).forEach(nfCat=>{
+        const label = nfCategoryLabel(nfCat.name);
+        const alreadyExists = extraCharts.some(c=>c.label.trim().toLowerCase()===label.toLowerCase());
+        if(alreadyExists) return;
+        extraCharts.push({
+          id: ++extraCounter, label, prevScore:'',
+          score: fracLabelToPct(nfCat.num, nfCat.den),
+          topics: nfCat.mastered.map(name=>({name, curr:'Mastered', prev:'', checked:true})),
+          _narrativeCurr: null, currFileName:'(split from main report)', prevFileName:''
+        });
+        summary.push(`Split out: <strong>${escapeAttr(label)}</strong> (${nfCat.num}/${nfCat.den}) from the main report into Additional assessments`);
+      });
+
       leftovers = classified.filter(c=>!mainUsed.includes(c));
       if(mainSkipped.length){
         summary.push(`(${mainSkipped.length} extra main-format file(s) fell in between the dates used and were set aside, see below)`);
@@ -1161,6 +1219,11 @@ document.getElementById('parseBtn').addEventListener('click', async ()=>{
     });
 
     groups.forEach((files, label)=>{
+      const alreadyExists = extraCharts.some(c=>c.label.trim().toLowerCase()===label.trim().toLowerCase());
+      if(alreadyExists){
+        summary.push(`Skipped: <strong>${escapeAttr(label)}</strong> already has a card below (re-analyzing doesn't duplicate it).`);
+        return;
+      }
       files.sort(byDate);
       const built = files.length === 1 ? buildCardFromSingle(files[0]) : buildCardFromPair(files[0], files[files.length-1]);
       const card = {
@@ -1413,14 +1476,26 @@ function renderExtra(){
     return;
   }
   let html = '';
+  const PRESET_LABELS = [
+    'Numerical Fluency Addition and Subtraction',
+    'Numerical Fluency Multiplication and Division',
+    'Geometry Extension Assessment',
+    'Computation Assessment (5th-8th)',
+    'High School Fundamental Skills (9th-12th)'
+  ];
   extraCharts.forEach(card=>{
     const hasComparison = card.topics.some(t=>t.prev);
+    const isPreset = PRESET_LABELS.includes(card.label);
     html += `<div class="step" style="margin-top:14px;border-color:var(--line);">
       <div class="step-body" style="padding:14px 16px;">
         <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-bottom:12px;">
-          <div class="field" style="flex:1;min-width:200px;">
+          <div class="field" style="flex:1;min-width:220px;">
             <label>Assessment name</label>
-            <input type="text" class="extraLabel" data-id="${card.id}" value="${escapeAttr(card.label)}" list="assessmentPresets">
+            <select class="extraLabelSelect" data-id="${card.id}">
+              ${PRESET_LABELS.map(p=>`<option value="${escapeAttr(p)}" ${card.label===p?'selected':''}>${escapeAttr(p)}</option>`).join('')}
+              <option value="__custom__" ${!isPreset?'selected':''}>Other (type your own)...</option>
+            </select>
+            <input type="text" class="extraLabelCustom" data-id="${card.id}" value="${escapeAttr(card.label)}" placeholder="Custom assessment name" style="margin-top:6px;${isPreset?'display:none;':''}">
           </div>
           <div class="field" style="width:110px;">
             <label>Previous score</label>
@@ -1476,7 +1551,19 @@ function renderExtra(){
   });
   host.innerHTML = html;
 
-  host.querySelectorAll('.extraLabel').forEach(el=>el.addEventListener('input', e=>{
+  host.querySelectorAll('.extraLabelSelect').forEach(el=>el.addEventListener('change', e=>{
+    const card = extraCharts.find(c=>c.id===+e.target.dataset.id);
+    const customInput = host.querySelector(`.extraLabelCustom[data-id="${card.id}"]`);
+    if(e.target.value === '__custom__'){
+      customInput.style.display = '';
+      customInput.focus();
+      card.label = customInput.value;
+    } else {
+      customInput.style.display = 'none';
+      card.label = e.target.value;
+    }
+  }));
+  host.querySelectorAll('.extraLabelCustom').forEach(el=>el.addEventListener('input', e=>{
     const card = extraCharts.find(c=>c.id===+e.target.dataset.id);
     card.label = e.target.value;
   }));
@@ -1587,8 +1674,9 @@ function renderExtra(){
       } else {
         const nr = parsed.narrative;
         card._narrativeCurr = nr;
-        card.topics = nr.mastered.length
-          ? nr.mastered.map(name=>({name, curr:'Mastered', prev:'', checked:true}))
+        const nrMastered = narrativeMasteredFlat(nr, false);
+        card.topics = nrMastered.length
+          ? nrMastered.map(name=>({name, curr:'Mastered', prev:'', checked:true}))
           : nr.fallbackCategories.map(c=>({name:c.name, curr:fracLabelToPct(c.num,c.den), prev:'', checked:true}));
         if(nr.overall) card.score = fracLabelToPct(nr.overall.num, nr.overall.den);
         if(nr.studentName && !document.getElementById('studentName').value){
@@ -1624,11 +1712,13 @@ function renderExtra(){
         // show concepts newly mastered since the previous report (same rule as the main flow)
         const currNr = card._narrativeCurr;
         const prevNr = parsed.narrative;
+        const currMasteredAll = narrativeMasteredFlat(currNr, false);
+        const prevMasteredAll = narrativeMasteredFlat(prevNr, false);
         if(prevNr.overall) card.prevScore = fracLabelToPct(prevNr.overall.num, prevNr.overall.den);
-        if(currNr.mastered.length || prevNr.mastered.length){
-          const prevMastered = new Set(prevNr.mastered.map(s=>s.toLowerCase()));
-          const prevInProgress = new Set(prevNr.inProgress.map(s=>s.toLowerCase()));
-          card.topics = currNr.mastered
+        if(currMasteredAll.length || prevMasteredAll.length){
+          const prevMastered = new Set(prevMasteredAll.map(s=>s.toLowerCase()));
+          const prevInProgress = new Set(narrativeInProgressFlat(prevNr, false).map(s=>s.toLowerCase()));
+          card.topics = currMasteredAll
             .filter(name=>!prevMastered.has(name.toLowerCase()))
             .map(name=>{
               const key = name.toLowerCase();
@@ -1683,7 +1773,7 @@ async function parseAnyAssessmentFile(file){
   // to fool the chart parser into thinking it found real data if it runs first —
   // producing a garbled table where every paragraph line becomes its own category.
   const narrative = parseNarrativeReport(rows);
-  if(narrative && (narrative.mastered.length || narrative.fallbackCategories.length)){
+  if(narrative && (narrativeMasteredFlat(narrative, false).length || narrative.fallbackCategories.length)){
     return {kind:'narrative', file, studentName:narrative.studentName, narrative,
             dateRaw:narrative.date||'', assessmentNames:guessAssessmentNamesFromFilename(file.name)};
   }
@@ -1709,8 +1799,9 @@ function buildCardFromSingle(parsed){
     };
   }
   const nr = parsed.narrative;
-  const topics = nr.mastered.length
-    ? nr.mastered.map(name=>({name, curr:'Mastered', prev:'', checked:true}))
+  const nrMastered = narrativeMasteredFlat(nr, false);
+  const topics = nrMastered.length
+    ? nrMastered.map(name=>({name, curr:'Mastered', prev:'', checked:true}))
     : nr.fallbackCategories.map(c=>({name:c.name, curr:fracLabelToPct(c.num,c.den), prev:'', checked:true}));
   return {
     topics, score: nr.overall ? fracLabelToPct(nr.overall.num, nr.overall.den) : '', prevScore:'',
@@ -1736,11 +1827,13 @@ function buildCardFromPair(prevParsed, currParsed){
              studentName: currParsed.studentName || prevParsed.studentName, narrativeCurr:null};
   }
   const currNr = currParsed.narrative, prevNr = prevParsed.narrative;
+  const currMasteredAll = narrativeMasteredFlat(currNr, false);
+  const prevMasteredAll = narrativeMasteredFlat(prevNr, false);
   let topics;
-  if(currNr.mastered.length || prevNr.mastered.length){
-    const prevMastered = new Set(prevNr.mastered.map(s=>s.toLowerCase()));
-    const prevInProgress = new Set(prevNr.inProgress.map(s=>s.toLowerCase()));
-    topics = currNr.mastered.filter(name=>!prevMastered.has(name.toLowerCase())).map(name=>{
+  if(currMasteredAll.length || prevMasteredAll.length){
+    const prevMastered = new Set(prevMasteredAll.map(s=>s.toLowerCase()));
+    const prevInProgress = new Set(narrativeInProgressFlat(prevNr, false).map(s=>s.toLowerCase()));
+    topics = currMasteredAll.filter(name=>!prevMastered.has(name.toLowerCase())).map(name=>{
       const key = name.toLowerCase();
       return {name, curr:'Mastered', prev: prevInProgress.has(key) ? 'Not yet' : '', checked:true};
     });
@@ -1879,7 +1972,7 @@ function generateRfaEmail(){
   extraCharts.forEach(c=>{
     if(!c.label.trim() || !c.score.trim()) return;
     const blurb = findBlurb(c.label);
-    let line = `We also had ${student} work through the ${c.label.trim()} assessment`;
+    let line = `We also had ${student} work through the ${forParentFacing(c.label.trim())} assessment`;
     if(blurb) line += `. ${blurb}`;
     else line += '.';
     line += ` ${pr.subj[0].toUpperCase()+pr.subj.slice(1)} scored ${fracLabelToPct(c.score.trim())} overall.`;
@@ -1887,9 +1980,10 @@ function generateRfaEmail(){
   });
 
   // main assessment
-  const mainLabel = assessmentsGiven.find(n => /^Level \d|^Checkup/i.test(n)) || assessmentsGiven[0] || '';
+  const mainLabel = assessmentsGiven.find(n => /^Level \d|^Checkup|^Computation|^High School|^HS Fundamental|^Algebra Readiness/i.test(n)) || assessmentsGiven[0] || '';
+  const mainLabelClean = forParentFacing(mainLabel);
   const mainBlurb = mainLabel ? findBlurb(mainLabel) : '';
-  body += `I ended up giving ${student} ${mainLabel ? 'our ' + mainLabel + ' Assessment' : 'an initial assessment'}`;
+  body += `I ended up giving ${student} ${mainLabelClean ? 'our ' + mainLabelClean + ' Assessment' : 'an initial assessment'}`;
   if(mainBlurb) body += `. ${mainBlurb}`;
   body += `\n\nWe aim for students to score somewhere around ${STANDARD_SCORE_RANGE} on an initial assessment, enough to show real prior knowledge while still leaving clear room to grow. ${student} scored ${score || '[score]'} overall`;
   body += center.scoreVoice === 'warm' ? `, which is a great starting point!\n\n` : `, indicating some gaps to close but a solid enough foundation to start building on right away.\n\n`;
