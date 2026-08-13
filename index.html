@@ -166,6 +166,26 @@
   .sort-summary ul{margin:6px 0 0 0;padding-left:18px;}
   .sort-summary li{margin-bottom:3px;}
 
+  .mode-toggle{
+    display:flex;gap:0;border:1px solid var(--line);border-radius:8px;overflow:hidden;
+    margin-top:20px;background:#fff;
+  }
+  .mode-toggle label{
+    flex:1;text-align:center;padding:14px 16px;cursor:pointer;font-weight:700;font-size:14px;
+    color:var(--ink-soft);background:#fafafa;transition:background .12s,color .12s;
+    border-right:1px solid var(--line);
+  }
+  .mode-toggle label:last-child{border-right:none;}
+  .mode-toggle input{display:none;}
+  .mode-toggle input:checked + span{color:var(--red);}
+  .mode-toggle label.active{background:#fff;}
+  .mode-toggle label.active span{color:var(--red);}
+  .rfa-panel{background:#fff;border:1px solid var(--line);border-radius:8px;padding:18px 20px;margin-top:14px;}
+  .rfa-panel h4{margin:0 0 10px 0;font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-soft);}
+  .toggle-row{display:flex;align-items:flex-start;gap:8px;font-size:13.5px;font-weight:600;margin-bottom:10px;cursor:pointer;}
+  .toggle-row input{margin-top:2px;}
+  .toggle-row .toggle-note{font-weight:400;color:var(--ink-soft);display:block;font-size:12.5px;margin-top:2px;}
+
   button{
     font-family:inherit;
     cursor:pointer;
@@ -316,7 +336,7 @@
     <summary>How to use this page</summary>
     <div class="howto-body">
       <div class="pull-note">
-        Use the <strong>Report</strong> button on the student's details page in Radius to pull assessment reports. Leave <strong>Expected Timeline</strong> unchecked, then click <strong>Preview</strong> to download the PDF. (Also double-check <strong>Results Display Format</strong> is set to <strong>Fraction</strong> — that's what this tool reads.)
+        Use the <strong>Report</strong> button on the student's details page in Radius to pull assessment reports. Leave <strong>Expected Timeline</strong> unchecked, then click <strong>Preview</strong> to download the PDF. (Also double-check <strong>Results Display Format</strong> is set to <strong>Fraction</strong>, since that's what this tool reads.)
       </div>
       <p style="margin-top:12px;">Quick rundown:</p>
       <ul>
@@ -329,6 +349,17 @@
     </div>
   </details>
 
+  <div class="mode-toggle" id="emailModeToggle">
+    <label class="active" id="modeLabelProgress">
+      <input type="radio" name="emailMode" value="progress" checked>
+      <span>Progress Update <span style="font-weight:400;">(existing family)</span></span>
+    </label>
+    <label id="modeLabelRfa">
+      <input type="radio" name="emailMode" value="rfa">
+      <span>Risk-Free Assessment <span style="font-weight:400;">(new lead)</span></span>
+    </label>
+  </div>
+
   <!-- STEP 1 -->
   <div class="step">
     <div class="step-head">
@@ -337,19 +368,19 @@
       <div class="hint">PDF exports from Radius</div>
     </div>
     <div class="step-body">
-      <p class="desc">Drop in <strong>all</strong> of this student's PDFs at once — main chart(s), Numerical Fluency, Extension, whatever you've got. The tool sorts out what's what and where it goes. It's a best guess where charts look identical (like a main chart vs. an Extension chart), so double-check the summary after analyzing.</p>
+      <p class="desc">Drop in <strong>all</strong> of this student's PDFs at once: main chart(s), Numerical Fluency, Extension, whatever you've got. The tool sorts out what's what and where it goes. It's a best guess where charts look identical (like a main chart vs. an Extension chart), so double-check the summary after analyzing.</p>
       <div class="drop-wrap" id="dropWrapAll">
         <label class="drop" id="dropAll">
           <div class="label">All assessment PDFs</div>
           <div class="filename" id="fileNameAll">Drag PDFs here (one or several), or click to choose</div>
-          <div class="sub">Assessment Charts, Comparison Charts, Assessment/Mastery Reports — any mix</div>
+          <div class="sub">Assessment Charts, Comparison Charts, Assessment/Mastery Reports, any mix</div>
           <input type="file" id="fileAll" accept="application/pdf" multiple>
         </label>
       </div>
       <div id="fileListAll"></div>
       <div class="btn-row">
         <button class="btn-primary" id="parseBtn">Analyze all</button>
-        <button class="btn-ghost" id="manualBtn">Skip — build table manually</button>
+        <button class="btn-ghost" id="manualBtn">Skip: build table manually</button>
         <span class="status" id="parseStatus"></span>
       </div>
     </div>
@@ -360,7 +391,7 @@
       <div class="step-head" style="border-bottom:none;">
         <div class="step-num" style="background:var(--grey);">+</div>
         <h2>Additional assessments <span style="font-weight:400;color:var(--ink-soft);">(optional)</span></h2>
-        <div class="hint">Auto-filled from Step 1, or add your own — click to expand</div>
+        <div class="hint">Auto-filled from Step 1, or add your own. Click to expand</div>
       </div>
     </summary>
     <div class="step-body" style="border-top:1px solid var(--line);">
@@ -390,6 +421,12 @@
       <div class="meta-grid" style="margin-bottom:16px;">
         <div class="field"><label>Student first name</label><input type="text" id="studentName"></div>
         <div class="field"><label>Parent / guardian name</label><input type="text" id="parentName" placeholder="e.g. Kristine"></div>
+        <div class="field"><label>Center</label>
+          <select id="emailCenter">
+            <option value="WL">West Linn</option>
+            <option value="MEV">East Vancouver (MEV)</option>
+          </select>
+        </div>
         <div class="field"><label>Pronoun</label>
           <select id="pronoun">
             <option value="they">they / them / their</option>
@@ -397,20 +434,41 @@
             <option value="he">he / him / his</option>
           </select>
         </div>
-        <div class="field"><label>Previous score</label><input type="text" id="prevScore" placeholder="e.g. 65%"></div>
-        <div class="field"><label>Previous date</label><input type="text" id="prevDate" placeholder="e.g. 5/27/2026"></div>
-        <div class="field"><label>Current score</label><input type="text" id="currScore" placeholder="e.g. 82%"></div>
-        <div class="field"><label>Current date</label><input type="text" id="currDate" placeholder="e.g. 8/5/2026"></div>
-        <div class="field"><label>Previous learning plan / level (optional)</label><input type="text" id="prevPlan" placeholder="e.g. Level 7"></div>
+        <div id="progressOnlyFields" style="display:contents;">
+          <div class="field"><label>Previous score</label><input type="text" id="prevScore" placeholder="e.g. 65%"></div>
+          <div class="field"><label>Previous date</label><input type="text" id="prevDate" placeholder="e.g. 5/27/2026"></div>
+          <div class="field"><label>Previous learning plan / level (optional)</label><input type="text" id="prevPlan" placeholder="e.g. Level 7"></div>
+        </div>
+        <div class="field"><label id="currScoreLabel">Current score</label><input type="text" id="currScore" placeholder="e.g. 82%"></div>
+        <div class="field"><label id="currDateLabel">Current date</label><input type="text" id="currDate" placeholder="e.g. 8/5/2026"></div>
         <div class="field"><label>Your name (sender)</label><input type="text" id="staffName" placeholder="e.g. Rebecca"></div>
         <div class="field" style="grid-column:1 / -1;"><label>Assessments given (auto-detected where possible)</label><input type="text" id="assessmentsGiven" placeholder="e.g. Level 3, Level 3 Extension, Numerical Fluency Addition and Subtraction"></div>
       </div>
-      <label style="display:flex;align-items:center;gap:8px;font-size:13.5px;font-weight:600;margin-bottom:10px;cursor:pointer;">
-        <input type="checkbox" id="preAssessmentToggle">
-        This is a pre-assessment (only one chart, nothing to compare it to)
-      </label>
-      <p class="desc" style="margin-top:0;">When checked, the results table below switches from "improved" to "showed mastery" (100% topics), and the email skips the score-comparison language since there's no previous score.</p>
+      <div id="progressOnlyToggle">
+        <label style="display:flex;align-items:center;gap:8px;font-size:13.5px;font-weight:600;margin-bottom:10px;cursor:pointer;">
+          <input type="checkbox" id="preAssessmentToggle">
+          This is a pre-assessment (only one chart, nothing to compare it to)
+        </label>
+        <p class="desc" style="margin-top:0;">When checked, the results table below switches from "improved" to "showed mastery" (100% topics), and the email skips the score-comparison language since there's no previous score.</p>
+      </div>
       <div id="scoreChipWrap"></div>
+
+      <div class="rfa-panel" id="rfaPanel" style="display:none;">
+        <h4>Risk-Free Assessment details</h4>
+        <div class="meta-grid" style="margin-bottom:14px;">
+          <div class="field"><label>Start date</label><input type="text" id="rfaStartDate" placeholder="e.g. Tuesday, 8/11"></div>
+          <div class="field"><label>Commitment length</label><input type="text" id="rfaCommitment" placeholder="e.g. 6-Month"></div>
+        </div>
+        <label class="toggle-row"><input type="checkbox" id="rfaScheduling" checked>
+          <span>We handle scheduling through AppointyM<span class="toggle-note">Unchecked: ask the family what times work instead of mentioning the booking system.</span></span>
+        </label>
+        <label class="toggle-row"><input type="checkbox" id="rfaDayInLife">
+          <span>Mention the "day at Mathnasium" program overview<span class="toggle-note">Added as a one-line pointer to the attached Parent Pack / Program Overview, not the full explainer. Keeps the email shorter.</span></span>
+        </label>
+        <label class="toggle-row"><input type="checkbox" id="rfaHomework">
+          <span>Include homework policy explainer<span class="toggle-note">Off by default since it's already covered in the enrollment documents.</span></span>
+        </label>
+      </div>
     </div>
   </div>
 
@@ -462,7 +520,7 @@ Integer Subtraction/Multiplication and Division with Two Numbers"></textarea>
     </div>
   </div>
 
-  <div class="footer-note">Built for Exponential Potential Mathnasiums — runs entirely in your browser, nothing is uploaded anywhere.</div>
+  <div class="footer-note">Built for Exponential Potential Mathnasiums. Runs entirely in your browser, nothing is uploaded anywhere.</div>
 </div>
 
 <script>
@@ -594,7 +652,7 @@ function parseChart(rows){
   const chart = { mode:null, studentName:'', checkup:'', scores:[], dates:[], categories:[] };
   let currentCat = null;
 
-  const isFooter = t => /Mathnasium of West Linn|Page \d+ of \d+/i.test(t);
+  const isFooter = t => /Mathnasium of [A-Za-z ]+|Page \d+ of \d+/i.test(t);
   const isPureBracket = t => /^\(?[\d,\s]+\)?$/.test(t.trim());
 
   rows.forEach(row=>{
@@ -712,7 +770,7 @@ function parseNarrativeReport(rows){
       return;
     }
 
-    if(/Center Director|Mathnasium of West Linn|\(\d{3}\)\s*\d{3}-\d{4}/i.test(l)){
+    if(/Center Director|Mathnasium of [A-Za-z ]+|\(\d{3}\)\s*\d{3}-\d{4}/i.test(l)){
       inBlock = false; return;
     }
     const overallMatch = l.match(/^Skills Mastered\s+(\d+)\s*\/\s*(\d+)\s+(\d+)%\s*$/i);
@@ -1051,12 +1109,12 @@ document.getElementById('parseBtn').addEventListener('click', async ()=>{
 
       leftovers = classified.filter(c=>!mainUsed.includes(c));
       if(mainSkipped.length){
-        summary.push(`(${mainSkipped.length} extra main-format file(s) fell in between the dates used and were set aside — see below)`);
+        summary.push(`(${mainSkipped.length} extra main-format file(s) fell in between the dates used and were set aside, see below)`);
       }
     } else {
       // nothing looked like a "main" assessment — leave Step 1 empty, everything becomes extras
       leftovers = classified.slice();
-      summary.push(`No main grade-level assessment detected among these files — everything below went into Additional assessments instead.`);
+      summary.push(`No main grade-level assessment detected among these files, so everything below went into Additional assessments instead.`);
     }
 
     // group leftovers into additional-assessment cards, by detected label
@@ -1082,19 +1140,19 @@ document.getElementById('parseBtn').addEventListener('click', async ()=>{
         document.getElementById('studentName').value = firstNameOf(built.studentName);
       }
       summary.push(files.length===1
-        ? `Additional: <strong>${escapeAttr(label)}</strong> — ${escapeAttr(files[0].file.name)}`
-        : `Additional: <strong>${escapeAttr(label)}</strong> — ${escapeAttr(files[0].file.name)} → ${escapeAttr(files[files.length-1].file.name)} (compared)`);
+        ? `Additional: <strong>${escapeAttr(label)}</strong>: ${escapeAttr(files[0].file.name)}`
+        : `Additional: <strong>${escapeAttr(label)}</strong>: ${escapeAttr(files[0].file.name)} to ${escapeAttr(files[files.length-1].file.name)} (compared)`);
     });
 
     if(unreadable.length){
-      summary.push(`Could not auto-read: ${unreadable.map(escapeAttr).join(', ')} — likely the raw checkbox-style checkup PDF. Add those by hand if needed.`);
+      summary.push(`Could not auto-read: ${unreadable.map(escapeAttr).join(', ')}. This usually means the raw checkbox-style checkup PDF; add those by hand if needed.`);
     }
 
     revealSteps();
     renderExtra();
     if(groups.size) document.getElementById('extraDetails').open = true;
 
-    statusEl.innerHTML = `Sorted ${classified.length} file(s). Review below — everything is editable if something landed in the wrong place.<div class="sort-summary"><ul>${summary.map(s=>`<li>${s}</li>`).join('')}</ul></div>`;
+    statusEl.innerHTML = `Sorted ${classified.length} file(s). Review below: everything is editable if something landed in the wrong place.<div class="sort-summary"><ul>${summary.map(s=>`<li>${s}</li>`).join('')}</ul></div>`;
     statusEl.className = 'status ok';
   } catch(e){
     console.error(e);
@@ -1159,7 +1217,7 @@ function renderTable(){
     : '"Improved" is auto-checked where the score went up. "New at this level" is auto-checked for topics that only appear on the current assessment (grade-level-up case). Uncheck anything you don\'t want in the email, or edit any cell directly.';
 
   if(!dataset.categories.length){
-    host.innerHTML = '<div class="empty-note">No categories yet — add one below.</div>';
+    host.innerHTML = '<div class="empty-note">No categories yet. Add one below.</div>';
     return;
   }
 
@@ -1351,7 +1409,7 @@ function renderExtra(){
           </div>
           <div class="drop-wrap${card.prevFileName ? ' filled' : ''}">
             <label class="drop" style="padding:10px;">
-              <div class="sub" style="margin-top:0;">Previous report PDF (optional — for a comparison email)</div>
+              <div class="sub" style="margin-top:0;">Previous report PDF (optional, for a comparison email)</div>
               <div class="filename" style="font-size:12.5px;">${card.prevFileName ? escapeAttr(card.prevFileName) : 'Drag a PDF here, or click to choose'}</div>
               <input type="file" accept="application/pdf" class="extraFilePrev" data-id="${card.id}">
             </label>
@@ -1479,7 +1537,7 @@ function renderExtra(){
     try{
       const parsed = await parseAnyAssessmentFile(file);
       if(!parsed){
-        statusEl.textContent = 'Could not auto-read that PDF (this happens with the raw checkbox-style Numerical Fluency checkup — the checkmarks are images, not text). Add the score/notes by hand below instead.';
+        statusEl.textContent = 'Could not auto-read that PDF (this happens with the raw checkbox-style Numerical Fluency checkup, since the checkmarks are images, not text). Add the score/notes by hand below instead.';
         statusEl.className = 'status err';
         card._narrativeCurr = null;
       } else if(parsed.kind==='chart'){
@@ -1490,7 +1548,7 @@ function renderExtra(){
         });
         if(parsed.overall) card.score = parsed.overall;
         card._narrativeCurr = null;
-        statusEl.textContent = `Analyzed ${card.topics.length} row(s) — review below.`;
+        statusEl.textContent = `Analyzed ${card.topics.length} row(s). Review below.`;
         statusEl.className = 'status ok';
       } else {
         const nr = parsed.narrative;
@@ -1502,13 +1560,13 @@ function renderExtra(){
         if(nr.studentName && !document.getElementById('studentName').value){
           document.getElementById('studentName').value = firstNameOf(nr.studentName);
         }
-        statusEl.textContent = `Analyzed ${card.topics.length} row(s) — review below.`;
+        statusEl.textContent = `Analyzed ${card.topics.length} row(s). Review below.`;
         statusEl.className = 'status ok';
       }
       renderExtra();
     } catch(err){
       console.error(err);
-      statusEl.textContent = 'Could not analyze that PDF — add notes by hand below instead.';
+      statusEl.textContent = 'Could not analyze that PDF. Add notes by hand below instead.';
       statusEl.className = 'status err';
     }
   }));
@@ -1525,7 +1583,7 @@ function renderExtra(){
     try{
       const parsed = await parseAnyAssessmentFile(file);
       if(!parsed){
-        statusEl.textContent = 'Could not auto-read that previous-report PDF — fill in the "Prev" column by hand instead.';
+        statusEl.textContent = 'Could not auto-read that previous-report PDF. Fill in the "Prev" column by hand instead.';
         statusEl.className = 'status err';
       } else if(card._narrativeCurr && parsed.kind==='narrative'){
         // both current and previous are narrative reports — rebuild the topic list to only
@@ -1542,14 +1600,14 @@ function renderExtra(){
               const key = name.toLowerCase();
               return {name, curr:'Mastered', prev: prevInProgress.has(key) ? 'Not yet' : '', checked:true};
             });
-          statusEl.textContent = `Found ${card.topics.length} newly mastered concept(s) — review below.`;
+          statusEl.textContent = `Found ${card.topics.length} newly mastered concept(s). Review below.`;
         } else {
           const prevFlat = new Map(prevNr.fallbackCategories.map(c=>[c.name.toLowerCase(), c]));
           card.topics = currNr.fallbackCategories.map(c=>{
             const m = prevFlat.get(c.name.toLowerCase());
             return {name:c.name, curr:fracLabelToPct(c.num,c.den), prev: m?fracLabelToPct(m.num,m.den):'', checked:true};
           });
-          statusEl.textContent = `Compared ${card.topics.length} categor${card.topics.length===1?'y':'ies'} — review below.`;
+          statusEl.textContent = `Compared ${card.topics.length} categor${card.topics.length===1?'y':'ies'}. Review below.`;
         }
         statusEl.className = 'status ok';
       } else if(parsed.kind==='chart'){
@@ -1565,16 +1623,16 @@ function renderExtra(){
             card.topics.push({name:t.name, prev:t.value, curr:'', checked:false});
           }
         });
-        statusEl.textContent = `Matched ${usedNames.size} topic(s) to the current report — review below.`;
+        statusEl.textContent = `Matched ${usedNames.size} topic(s) to the current report. Review below.`;
         statusEl.className = 'status ok';
       } else {
-        statusEl.textContent = 'That previous-report format doesn\'t match the current report\'s format — fill in the "Prev" column by hand instead.';
+        statusEl.textContent = 'That previous-report format doesn\'t match the current report\'s format. Fill in the "Prev" column by hand instead.';
         statusEl.className = 'status err';
       }
       renderExtra();
     } catch(err){
       console.error(err);
-      statusEl.textContent = 'Could not analyze that PDF — fill in the "Prev" column by hand instead.';
+      statusEl.textContent = 'Could not analyze that PDF. Fill in the "Prev" column by hand instead.';
       statusEl.className = 'status err';
     }
   }));
@@ -1673,13 +1731,150 @@ function escapeAttr(s){
 /* ---------------------------------------------------------
    EMAIL GENERATION
 --------------------------------------------------------- */
+/* ---------------------------------------------------------
+   EMAIL MODE (Progress Update vs Risk-Free Assessment)
+--------------------------------------------------------- */
+document.querySelectorAll('input[name="emailMode"]').forEach(radio=>{
+  radio.addEventListener('change', ()=>{
+    const isRfa = document.querySelector('input[name="emailMode"]:checked').value === 'rfa';
+    document.getElementById('modeLabelProgress').classList.toggle('active', !isRfa);
+    document.getElementById('modeLabelRfa').classList.toggle('active', isRfa);
+    document.getElementById('rfaPanel').style.display = isRfa ? 'block' : 'none';
+    document.getElementById('progressOnlyFields').style.display = isRfa ? 'none' : 'contents';
+    document.getElementById('progressOnlyToggle').style.display = isRfa ? 'none' : 'block';
+    document.getElementById('currScoreLabel').textContent = isRfa ? 'Assessment score' : 'Current score';
+    document.getElementById('currDateLabel').textContent = isRfa ? 'Assessment date' : 'Current date';
+    if(isRfa){
+      // a risk-free assessment is always a first-time single snapshot — no "previous" to compare
+      document.getElementById('preAssessmentToggle').checked = true;
+      dataset.singleChartMode = true;
+      renderTable();
+    }
+  });
+});
+
+/* ---------------------------------------------------------
+   BLURB LIBRARY (Risk-Free Assessment mode)
+   Matched against assessment names/labels in the order the
+   assessments were given. Add more entries here as they come in.
+--------------------------------------------------------- */
+const ASSESSMENT_BLURBS = [
+  {pattern: /Numerical Fluency.*Addition/i,
+   text: "The Numerical Fluency Addition and Subtraction assessment looks at how a student thinks about numbers and the relationships between them, checking that they're using efficient, scalable counting strategies rather than relying on rote memorization."},
+  {pattern: /Numerical Fluency.*Multiplication/i,
+   text: "The Numerical Fluency Multiplication and Division assessment checks a student's command of their times tables and division facts, the foundation for multi-digit computation and fraction work ahead."},
+  {pattern: /Algebra Readiness/i,
+   text: "The Algebra Readiness assessment is a middle school capstone evaluation that covers all of the skills we want a student to have mastered before beginning 9th grade Algebra 1."},
+  {pattern: /Checkup\s*#?\s*5\b|Level\s*5\b/i,
+   text: "We've found that Checkup #5 tends to be more advanced than most 5th grade curriculum in the area, covering topics like integers, one-step algebraic equations, and order of operations (MDAS). We generally consider it an advanced 5th grade to early 6th grade level assessment."}
+];
+function findBlurb(label){
+  const hit = ASSESSMENT_BLURBS.find(b=>b.pattern.test(label));
+  return hit ? hit.text : '';
+}
+
+const CENTER_INFO = {
+  WL: {
+    name: 'Mathnasium of West Linn',
+    director: 'Justin Chia',
+    phone: '(503) 305-8738',
+    address: '21900 Willamette Dr, West Linn, Oregon 97068',
+    email: 'westlinn@mathnasium.com',
+    scoreVoice: 'clinical' // "indicates gaps but solid fundamentals" style
+  },
+  MEV: {
+    name: 'Mathnasium of East Vancouver',
+    director: 'Holly Ellis',
+    phone: '(360) 449-2878',
+    address: '16020 SE Mill Plain Blvd #117, Vancouver, Washington 98684',
+    email: 'eastvancouver@mathnasium.com',
+    scoreVoice: 'warm' // "phenomenal!" style
+  }
+};
+// standard is 40-70% on an initial assessment, regardless of center
+const STANDARD_SCORE_RANGE = '40-70%';
+
 function pronounSet(p){
   if(p==='she') return {subj:'she',obj:'her',poss:'her',be:'is'};
   if(p==='he') return {subj:'he',obj:'him',poss:'his',be:'is'};
   return {subj:'they',obj:'them',poss:'their',be:'are'};
 }
 
+function generateRfaEmail(){
+  const student = document.getElementById('studentName').value.trim() || 'the student';
+  const parent = document.getElementById('parentName').value.trim() || 'there';
+  const staff = document.getElementById('staffName').value.trim() || '[Your name]';
+  const pr = pronounSet(document.getElementById('pronoun').value);
+  const center = CENTER_INFO[document.getElementById('emailCenter').value];
+  const score = fracLabelToPct(dataset.currScore || document.getElementById('currScore').value.trim());
+  const scheduling = document.getElementById('rfaScheduling').checked;
+  const dayInLife = document.getElementById('rfaDayInLife').checked;
+  const homework = document.getElementById('rfaHomework').checked;
+  const startDate = document.getElementById('rfaStartDate').value.trim();
+  const commitment = document.getElementById('rfaCommitment').value.trim();
+  const assessmentsGivenRaw = document.getElementById('assessmentsGiven').value.trim();
+  const assessmentsGiven = assessmentsGivenRaw ? assessmentsGivenRaw.split(',').map(s=>s.trim()).filter(Boolean) : [];
+  const planTopics = document.getElementById('planTopics').value.split('\n').map(s=>s.trim()).filter(Boolean);
+
+  let body = `Hi ${parent}!\n\n`;
+  body += `It was great to meet you and ${student} during the assessment today! As promised, digital copies of the documents ${pr.subj} took home are attached to this email for your convenience. ${student} was a pleasure to work with and I look forward to getting ${pr.obj} started with us!\n\n`;
+
+  // walk through additional (warm-up/fluency) assessments first, matching the order given
+  extraCharts.forEach(c=>{
+    if(!c.label.trim() || !c.score.trim()) return;
+    const blurb = findBlurb(c.label);
+    let line = `We also had ${student} work through the ${c.label.trim()} assessment`;
+    if(blurb) line += `. ${blurb}`;
+    else line += '.';
+    line += ` ${pr.subj[0].toUpperCase()+pr.subj.slice(1)} scored ${fracLabelToPct(c.score.trim())} overall.`;
+    body += `${line}\n\n`;
+  });
+
+  // main assessment
+  const mainLabel = assessmentsGiven.find(n => /^Level \d|^Checkup/i.test(n)) || assessmentsGiven[0] || '';
+  const mainBlurb = mainLabel ? findBlurb(mainLabel) : '';
+  body += `I ended up giving ${student} ${mainLabel || 'an initial assessment'}`;
+  if(mainBlurb) body += `. ${mainBlurb}`;
+  body += `\n\nWe aim for students to score somewhere around ${STANDARD_SCORE_RANGE} on an initial assessment, enough to show real prior knowledge while still leaving clear room to grow. ${student} scored ${score || '[score]'} overall`;
+  body += center.scoreVoice === 'warm' ? `, which is a great starting point!\n\n` : `, indicating some gaps to close but a solid enough foundation to start building on right away.\n\n`;
+
+  if(planTopics.length){
+    body += `Some of ${pr.poss} key areas to work on include:\n\n`;
+    planTopics.forEach(t=> body += `* ${t}\n`);
+    body += `\nThe attached Learning Plan details everything we'd work on with ${pr.obj}. Those skills get tackled a few at a time, with enough variety to keep things engaging while making sure they stick.\n\n`;
+  } else {
+    body += `The attached Learning Plan details everything we'd work on with ${pr.obj} moving forward.\n\n`;
+  }
+
+  if(dayInLife){
+    body += `For a full look at what a session at Mathnasium is like day to day, see the attached Program Overview.\n\n`;
+  }
+  if(homework){
+    body += `We also help with homework when time allows, though our curriculum stays the priority. More detail on how that works is in the attached enrollment documents.\n\n`;
+  }
+
+  body += `To get ${student} enrolled, we just need to know ${pr.poss} start date and which commitment length you'd like (Month-to-Month, 6-Month, or 12-Month), which also lets us prorate the first month correctly. `;
+  if(startDate) body += `We could get ${pr.obj} started as soon as ${startDate}. `;
+  body += `Our hours and pricing are in the attached Parent Pack for your reference.\n\n`;
+
+  if(scheduling){
+    body += `Once the enrollment documents are complete, you'll get a link to our online scheduling system, AppointyM, where you can book sessions at your convenience.\n\n`;
+  } else {
+    body += `Once the enrollment documents are complete, just let us know what times generally work best and we'll get ${student} on the schedule.\n\n`;
+  }
+
+  body += `If you have any questions, please let us know! We're looking forward to working with ${student}.\n\n`;
+  body += `Best,\n${staff}\n${center.name}\n${center.phone}`;
+
+  return body;
+}
+
 document.getElementById('genBtn').addEventListener('click', ()=>{
+  const isRfa = document.querySelector('input[name="emailMode"]:checked').value === 'rfa';
+  if(isRfa){
+    document.getElementById('emailOut').value = generateRfaEmail();
+    return;
+  }
   const student = document.getElementById('studentName').value.trim() || 'the student';
   const parent = document.getElementById('parentName').value.trim() || 'there';
   const staff = document.getElementById('staffName').value.trim() || '[Your name]';
@@ -1801,7 +1996,7 @@ document.getElementById('genBtn').addEventListener('click', ()=>{
     body += `\n`;
   }
   body += `A reassessment is built into the next learning plan, so we'll follow up with another update once that's complete. In the meantime, please don't hesitate to reach out with any questions. Thank you!\n\n`;
-  body += `Best,\n${staff}\nMathnasium of West Linn`;
+  body += `Best,\n${staff}\n${CENTER_INFO[document.getElementById('emailCenter').value].name}`;
 
   document.getElementById('emailOut').value = body;
 });
