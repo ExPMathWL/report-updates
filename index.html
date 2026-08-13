@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Progress Report Builder — Mathnasium of West Linn</title>
+<title>Email Builder - Exponential Potential Mathnasiums</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <style>
   /*
@@ -216,14 +216,30 @@
   .field label{font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-soft);font-weight:700;}
   .field input,.field select,.field textarea{
     font-family:inherit;
-    font-size:14px;
-    padding:8px 10px;
-    border:1px solid var(--line);
+    font-size:14.5px;
+    padding:9px 11px;
+    border:1.5px solid var(--grey-light);
     border-radius:6px;
-    background:#fff;
+    background:#fcfcfb;
     color:var(--ink);
   }
-  .field input:focus,.field select:focus,.field textarea:focus{outline:2px solid var(--red);outline-offset:0;border-color:var(--red);}
+  .field input:hover,.field select:hover,.field textarea:hover{border-color:var(--grey);}
+  .field input:focus,.field select:focus,.field textarea:focus{outline:2px solid var(--red);outline-offset:0;border-color:var(--red);background:#fff;}
+
+  input[type=checkbox],input[type=radio]{
+    accent-color:var(--red);
+    width:17px;height:17px;
+    cursor:pointer;
+    flex:none;
+  }
+  .toggle-row{
+    background:#fcfcfb;
+    border:1.5px solid var(--grey-light);
+    border-radius:7px;
+    padding:10px 14px;
+  }
+  .toggle-row:hover{border-color:var(--grey);}
+  .toggle-row:has(input:checked){border-color:var(--red);background:#fff8f7;}
 
   .score-chip{
     display:inline-flex;align-items:baseline;gap:6px;
@@ -324,9 +340,9 @@
 
 <header class="top">
   <div class="wrap">
-    <div class="wordmark">MATHNASIUM<span class="sub">West Linn · Staff Tool</span></div>
-    <h1>Progress Report Builder</h1>
-    <p>Upload two Radius assessment-chart PDFs (or one comparison chart), review the results, and draft a parent update email.</p>
+    <div class="wordmark">MATHNASIUM<span class="sub">Exponential Potential · Staff Tool</span></div>
+    <h1>Email Builder</h1>
+    <p>Upload Radius assessment-chart PDFs, review the results, and draft a parent email.</p>
   </div>
 </header>
 
@@ -424,7 +440,7 @@
         <div class="field"><label>Center</label>
           <select id="emailCenter">
             <option value="WL">West Linn</option>
-            <option value="MEV">East Vancouver (MEV)</option>
+            <option value="MEV">East Vancouver</option>
           </select>
         </div>
         <div class="field"><label>Pronoun</label>
@@ -445,9 +461,9 @@
         <div class="field" style="grid-column:1 / -1;"><label>Assessments given (auto-detected where possible)</label><input type="text" id="assessmentsGiven" placeholder="e.g. Level 3, Level 3 Extension, Numerical Fluency Addition and Subtraction"></div>
       </div>
       <div id="progressOnlyToggle">
-        <label style="display:flex;align-items:center;gap:8px;font-size:13.5px;font-weight:600;margin-bottom:10px;cursor:pointer;">
+        <label class="toggle-row" style="display:flex;align-items:center;margin-bottom:10px;">
           <input type="checkbox" id="preAssessmentToggle">
-          This is a pre-assessment (only one chart, nothing to compare it to)
+          <span style="margin-left:8px;">This is a pre-assessment (only one chart, nothing to compare it to)</span>
         </label>
         <p class="desc" style="margin-top:0;">When checked, the results table below switches from "improved" to "showed mastery" (100% topics), and the email skips the score-comparison language since there's no previous score.</p>
       </div>
@@ -461,6 +477,9 @@
         </div>
         <label class="toggle-row"><input type="checkbox" id="rfaScheduling" checked>
           <span>We handle scheduling through AppointyM<span class="toggle-note">Unchecked: ask the family what times work instead of mentioning the booking system.</span></span>
+        </label>
+        <label class="toggle-row"><input type="checkbox" id="rfaLearningPlan" checked>
+          <span>We send a Learning Plan document<span class="toggle-note">MEV does, West Linn doesn't — uncheck for centers that skip this.</span></span>
         </label>
         <label class="toggle-row"><input type="checkbox" id="rfaDayInLife">
           <span>Mention the "day at Mathnasium" program overview<span class="toggle-note">Added as a one-line pointer to the attached Parent Pack / Program Overview, not the full explainer. Keeps the email shorter.</span></span>
@@ -993,6 +1012,16 @@ function describeAssessmentName(name){
   return name;
 }
 
+/* Percentage-bar charts don't carry a "Level N" label the way narrative
+   reports do — but they do print "Checkup #N" as a title, which maps
+   1:1 onto the same "Level N" naming families use in the RFA/enrollment
+   conversation, so we can build the same style of label from it. */
+function assessmentLabelFromCheckup(checkupText){
+  const m = (checkupText||'').match(/(\d+)/);
+  if(!m) return '';
+  return describeAssessmentName(`Level ${m[1]}`);
+}
+
 function guessAssessmentNamesFromFilename(filename){
   if(!filename) return [];
   let s = filename.replace(/\.pdf$/i, '');
@@ -1088,6 +1117,8 @@ document.getElementById('parseBtn').addEventListener('click', async ()=>{
                        categories: chart.categories.map(c=>({name:c.name, topics:c.topics.map(t=>({name:t.name, prev:null, curr:t.percent}))})),
                        singleChartMode:true};
           }
+          const label = assessmentLabelFromCheckup(chart.checkup);
+          merged.assessmentsGiven = label ? [label] : [];
         }
         summary.push(`Main assessment: <strong>${escapeAttr(only.file.name)}</strong> (single snapshot)`);
       } else {
@@ -1098,7 +1129,10 @@ document.getElementById('parseBtn').addEventListener('click', async ()=>{
         } else {
           const rowsPrev = await extractRowsFromPDF(prevC.file);
           const rowsCurr = await extractRowsFromPDF(currC.file);
-          merged = mergeTwoCharts(parseChart(rowsPrev), parseChart(rowsCurr));
+          const chartCurr = parseChart(rowsCurr);
+          merged = mergeTwoCharts(parseChart(rowsPrev), chartCurr);
+          const label = assessmentLabelFromCheckup(chartCurr.checkup);
+          merged.assessmentsGiven = label ? [label] : [];
         }
         summary.push(`Main assessment: <strong>${escapeAttr(prevC.file.name)}</strong> → <strong>${escapeAttr(currC.file.name)}</strong> (compared)`);
       }
@@ -1808,6 +1842,7 @@ function generateRfaEmail(){
   const center = CENTER_INFO[document.getElementById('emailCenter').value];
   const score = fracLabelToPct(dataset.currScore || document.getElementById('currScore').value.trim());
   const scheduling = document.getElementById('rfaScheduling').checked;
+  const learningPlan = document.getElementById('rfaLearningPlan').checked;
   const dayInLife = document.getElementById('rfaDayInLife').checked;
   const homework = document.getElementById('rfaHomework').checked;
   const startDate = document.getElementById('rfaStartDate').value.trim();
@@ -1815,6 +1850,14 @@ function generateRfaEmail(){
   const assessmentsGivenRaw = document.getElementById('assessmentsGiven').value.trim();
   const assessmentsGiven = assessmentsGivenRaw ? assessmentsGivenRaw.split(',').map(s=>s.trim()).filter(Boolean) : [];
   const planTopics = document.getElementById('planTopics').value.split('\n').map(s=>s.trim()).filter(Boolean);
+
+  const mastery = [];
+  document.querySelectorAll('.masteryChk').forEach(cb=>{
+    if(cb.checked){
+      const [ci,ti] = cb.dataset.row.split('_').map(Number);
+      if(dataset.categories[ci] && dataset.categories[ci].topics[ti]) mastery.push(dataset.categories[ci].topics[ti].name);
+    }
+  });
 
   let body = `Hi ${parent}!\n\n`;
   body += `It was great to meet you and ${student} during the assessment today! As promised, digital copies of the documents ${pr.subj} took home are attached to this email for your convenience. ${student} was a pleasure to work with and I look forward to getting ${pr.obj} started with us!\n\n`;
@@ -1833,17 +1876,29 @@ function generateRfaEmail(){
   // main assessment
   const mainLabel = assessmentsGiven.find(n => /^Level \d|^Checkup/i.test(n)) || assessmentsGiven[0] || '';
   const mainBlurb = mainLabel ? findBlurb(mainLabel) : '';
-  body += `I ended up giving ${student} ${mainLabel || 'an initial assessment'}`;
+  body += `I ended up giving ${student} ${mainLabel ? 'our ' + mainLabel + ' Assessment' : 'an initial assessment'}`;
   if(mainBlurb) body += `. ${mainBlurb}`;
   body += `\n\nWe aim for students to score somewhere around ${STANDARD_SCORE_RANGE} on an initial assessment, enough to show real prior knowledge while still leaving clear room to grow. ${student} scored ${score || '[score]'} overall`;
   body += center.scoreVoice === 'warm' ? `, which is a great starting point!\n\n` : `, indicating some gaps to close but a solid enough foundation to start building on right away.\n\n`;
 
-  if(planTopics.length){
+  if(mastery.length){
+    body += `${student} showed mastery of the following topics:\n\n`;
+    mastery.forEach(t=> body += `* ${t}\n`);
+    body += `\n`;
+  }
+
+  if(learningPlan){
+    if(planTopics.length){
+      body += `Some of ${pr.poss} key areas to work on include:\n\n`;
+      planTopics.forEach(t=> body += `* ${t}\n`);
+      body += `\nThe attached Learning Plan details everything we'd work on with ${pr.obj}. Those skills get tackled a few at a time, with enough variety to keep things engaging while making sure they stick.\n\n`;
+    } else {
+      body += `The attached Learning Plan details everything we'd work on with ${pr.obj} moving forward.\n\n`;
+    }
+  } else if(planTopics.length){
     body += `Some of ${pr.poss} key areas to work on include:\n\n`;
     planTopics.forEach(t=> body += `* ${t}\n`);
-    body += `\nThe attached Learning Plan details everything we'd work on with ${pr.obj}. Those skills get tackled a few at a time, with enough variety to keep things engaging while making sure they stick.\n\n`;
-  } else {
-    body += `The attached Learning Plan details everything we'd work on with ${pr.obj} moving forward.\n\n`;
+    body += `\n`;
   }
 
   if(dayInLife){
