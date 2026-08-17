@@ -193,6 +193,15 @@
   .sort-summary ul{margin:6px 0 0 0;padding-left:18px;}
   .sort-summary li{margin-bottom:3px;}
 
+  .email-header-row{margin-bottom:12px;}
+  .email-header-label{display:block;font-size:12px;font-weight:700;color:var(--grey);margin-bottom:4px;text-transform:uppercase;letter-spacing:.03em;}
+  .email-header-input-wrap{display:flex;align-items:center;gap:8px;}
+  .email-header-input{
+    flex:1 1 auto;font-family:inherit;font-size:14px;font-weight:600;
+    border:1px solid var(--line);border-radius:6px;padding:9px 12px;
+  }
+  .email-header-input:focus{outline:2px solid var(--red);outline-offset:0;border-color:var(--red);}
+
   .mode-toggle{
     display:flex;gap:0;border:1px solid var(--line);border-radius:8px;overflow:hidden;
     margin-top:20px;background:#fff;
@@ -578,6 +587,14 @@ Integer Subtraction/Multiplication and Division with Two Numbers"></textarea>
         <button class="btn-primary" id="genBtn">Generate email</button>
         <button class="btn-ghost" id="copyBtn">Copy to clipboard</button>
         <span class="copy-ok" id="copyOk" style="display:none;">Copied!</span>
+      </div>
+      <div class="email-header-row">
+        <label class="email-header-label" for="emailHeaderOut">Header line</label>
+        <div class="email-header-input-wrap">
+          <input type="text" class="email-header-input" id="emailHeaderOut" placeholder="Generate the email to fill this in">
+          <button class="btn-ghost btn-sm" id="copyHeaderBtn">Copy</button>
+          <span class="copy-ok" id="copyHeaderOk" style="display:none;">Copied!</span>
+        </div>
       </div>
       <textarea class="email" id="emailOut" placeholder="Click &quot;Generate email&quot; once your details and topics above look right."></textarea>
     </div>
@@ -2449,8 +2466,190 @@ function generateSiblingRfaEmail(){
   return body;
 }
 
+/* Builds one child's assessment-comparison paragraph + mastery/improved/new
+   bullets + extra-assessment notes + updated plan topics, for Progress
+   Update mode. Mirrors the logic in the single-student genBtn handler below,
+   but reads from a saved student snapshot (dataset/extraCharts/meta) instead
+   of the live DOM/checkboxes, since only one sibling tab is "live" at a time.
+
+   Wording leans on center.scoreVoice (the same "warm" vs "clinical" toggle
+   the single-student/RFA flow already uses) so West Linn and East Vancouver
+   drafts read like the two centers' own real emails instead of one generic
+   voice pasted onto both. */
+function buildProgressChildSection(childDataset, childExtraCharts, childMeta, name, pr, center){
+  const preMode = !!childDataset.singleChartMode;
+  const prevPlan = (childMeta.prevPlan||'').trim();
+  const currScoreRaw = childDataset.currScore || '';
+  const prevScoreRaw = childDataset.prevScore || '';
+  const currScore = fracLabelToPct(currScoreRaw);
+  const prevScore = fracLabelToPct(prevScoreRaw);
+  const warm = center.scoreVoice === 'warm';
+
+  const pv = toComparableNum(prevScoreRaw), cv = toComparableNum(currScoreRaw);
+
+  let text = '';
+  if(!preMode && prevPlan){
+    text += `In the previous update we reported that ${name} had been working on ${pr.poss} ${prevPlan} lesson plan. `;
+  }
+
+  if(!preMode && pv!==null && cv!==null){
+    const d = Math.round((cv-pv)*10)/10;
+    if(d>0){
+      text += warm
+        ? `I'm happy to report ${pr.subj} improved ${pr.poss} score by ${d}%-points, scoring ${currScore} overall! `
+        : `On ${pr.poss} most recent attempt, ${pr.subj} improved ${pr.poss} score by ${d}%-points, scoring ${currScore} overall. `;
+    } else if(d<0){
+      text += warm
+        ? `${name} put in a great effort and scored ${currScore} overall this time, up against a tougher ${prevScore ? 'follow-up' : 'next'} assessment. `
+        : `On ${pr.poss} most recent attempt, ${pr.subj} scored ${currScore} overall. `;
+    } else {
+      text += `On ${pr.poss} most recent attempt, ${pr.subj} held steady, scoring ${currScore} overall. `;
+    }
+  } else if(cv!==null){
+    text += preMode
+      ? `${name} scored ${currScore} overall on ${pr.poss} initial assessment. `
+      : (warm ? `${name} scored ${currScore} overall on ${pr.poss} most recent progress check! ` : `${name} scored ${currScore} overall on ${pr.poss} most recent progress check. `);
+  }
+  text += `A skill-by-skill breakdown is attached to this email.\n\n`;
+
+  const improved = [], newTopics = [], mastery = [];
+  (childDataset.categories||[]).forEach(cat=>{
+    cat.topics.forEach(t=>{
+      if(preMode){
+        const checked = t.checked !== undefined ? t.checked : isFullScore(t.curr);
+        if(checked) mastery.push(t.name);
+      } else {
+        const pvT = t.prev!==null ? toComparableNum(t.prev) : null;
+        const cvT = t.curr!==null ? toComparableNum(t.curr) : null;
+        const autoImproved = pvT!==null && cvT!==null && cvT>pvT;
+        const improvedChecked = t.checked !== undefined ? t.checked : autoImproved;
+        const isNew = pvT===null && cvT!==null;
+        if(improvedChecked) improved.push(t.name);
+        if(isNew) newTopics.push(t.name);
+      }
+    });
+  });
+
+  if(preMode && mastery.length){
+    text += `${name} showed mastery of the following topics:\n\n`;
+    mastery.forEach(t=> text += `\u2022 ${t}\n`);
+    text += `\n`;
+  }
+  if(!preMode && improved.length){
+    text += `${name} improved on the following topics:\n\n`;
+    improved.forEach(t=> text += `\u2022 ${t}\n`);
+    text += `\n`;
+  }
+  if(!preMode && newTopics.length){
+    text += `${name} has also moved up to a new level, introducing some new topics ${pr.subj} ${pr.be} now being tested on:\n\n`;
+    newTopics.forEach(t=> text += `\u2022 ${t}\n`);
+    text += `\n`;
+  }
+
+  // Extra assessments (Numerical Fluency, etc.) get a short narrative lead-in
+  // rather than a flat "On the X assessment..." line, so it reads as part of
+  // the same story rather than a bolted-on data dump.
+  const extraNotes = (childExtraCharts||[])
+    .filter(c => c.label.trim())
+    .map(c => {
+      const hasComparison = !!c.prevScore.trim() || c.topics.some(t=>t.prev && t.prev.trim());
+      const checkedImproved = c.topics.filter(t=>{
+        if(!t.checked || !t.name.trim()) return false;
+        if(!hasComparison) return true;
+        const pv2 = toComparableNum(t.prev), cv2 = toComparableNum(t.curr);
+        return pv2===null || cv2===null || cv2 > pv2;
+      }).map(t=>t.name.trim());
+
+      if(!c.score.trim() && !checkedImproved.length) return null;
+
+      const label = forParentFacing(c.label.trim());
+      let line = `Along with this assessment, we also checked ${pr.poss} ${label} skills`;
+      if(hasComparison && c.prevScore.trim() && c.score.trim()){
+        line += `. ${pr.subj[0].toUpperCase()+pr.subj.slice(1)} moved from ${fracLabelToPct(c.prevScore.trim())} to ${fracLabelToPct(c.score.trim())} overall`;
+      } else if(c.score.trim()){
+        line += `. ${pr.subj[0].toUpperCase()+pr.subj.slice(1)} scored ${fracLabelToPct(c.score.trim())} overall`;
+      }
+      line += '.';
+      if(checkedImproved.length){
+        line += hasComparison
+          ? ` ${pr.subj[0].toUpperCase()+pr.subj.slice(1)} improved ${pr.poss} ${label} with the following skills:\n\n${checkedImproved.map(s=>`\u2022 ${s}`).join('\n')}\n`
+          : ` ${pr.subj[0].toUpperCase()+pr.subj.slice(1)} showed mastery in the following areas:\n\n${checkedImproved.map(s=>`\u2022 ${s}`).join('\n')}\n`;
+      }
+      return line;
+    })
+    .filter(Boolean);
+  if(extraNotes.length){
+    text += extraNotes.join('\n\n') + '\n\n';
+  }
+
+  const planTopics = (childMeta.planTopics||'').split('\n').map(s=>s.trim()).filter(Boolean);
+  if(planTopics.length){
+    text += `Based on these results, we've built an updated learning plan. ${pr.subj[0].toUpperCase()+pr.subj.slice(1)} will be focusing on:\n\n`;
+    planTopics.forEach(t=> text += `\u2022 ${t}\n`);
+    text += `\n`;
+  }
+
+  return text;
+}
+
+/* Combined Progress Update covering every sibling tab. One merged format
+   (drawing on real WL and MEV staff emails) used regardless of center: same
+   greeting/closing skeleton, with buildProgressChildSection's warm/clinical
+   tone doing the center-specific voice work per child. */
+function generateSiblingProgressEmail(){
+  snapshotActiveStudent(); // make sure the currently-open tab's edits are included
+
+  const parent = document.getElementById('parentName').value.trim() || 'there';
+  const staff = document.getElementById('staffName').value.trim() || '[Your name]';
+  const center = CENTER_INFO[document.getElementById('emailCenter').value];
+
+  const kids = students.map(s=>{
+    const name = firstNameOf(s.meta.studentName) || s.dataset.studentName || 'the student';
+    return {
+      name,
+      pr: pronounSet(s.meta.pronoun || 'they'),
+      dataset: s.dataset,
+      extraCharts: s.extraCharts,
+      meta: s.meta
+    };
+  });
+  const names = kids.map(k=>k.name);
+
+  let body = `Hi ${parent}!\n\n`;
+  body += `This is ${staff} with Mathnasium. ${listJoin(names)} recently completed a progress check, and I wanted to update you on their progress.\n\n`;
+
+  kids.forEach(k=>{
+    body += `${k.name}'s Progress Check\n\n`;
+    body += buildProgressChildSection(k.dataset, k.extraCharts, k.meta, k.name, k.pr, center);
+  });
+
+  body += `Skill-by-skill breakdowns for each of them are attached to this email. A reassessment is built into each of their next learning plans, so we'll follow up with another update once those are complete. If you have any questions at all, please don't hesitate to reach out. Thank you!\n\n`;
+  body += `Best,\n${staff}\n${center.name}`;
+
+  return body;
+}
+
+/* Header/subject line, copyable separately from the body. Progress Update
+   lists every sibling joined with "+"; RFA mirrors the same pattern. */
+function buildEmailHeader(){
+  const isRfa = document.querySelector('input[name="emailMode"]:checked').value === 'rfa';
+  const label = isRfa ? 'Risk-Free Assessment' : 'Progress Update';
+
+  let names;
+  if(siblingModeOn() && students.length > 1){
+    snapshotActiveStudent();
+    names = students.map(s => firstNameOf(s.meta.studentName) || s.dataset.studentName || 'Student');
+  } else {
+    const student = document.getElementById('studentName').value.trim() || 'the student';
+    names = [student];
+  }
+
+  return `${label} for ${names.join(' + ')} at Mathnasium`;
+}
+
 document.getElementById('genBtn').addEventListener('click', ()=>{
   const isRfa = document.querySelector('input[name="emailMode"]:checked').value === 'rfa';
+  document.getElementById('emailHeaderOut').value = buildEmailHeader();
   if(isRfa){
     if(siblingModeOn() && students.length > 1){
       document.getElementById('emailOut').value = generateSiblingRfaEmail();
@@ -2460,7 +2659,7 @@ document.getElementById('genBtn').addEventListener('click', ()=>{
     return;
   }
   if(siblingModeOn() && students.length > 1){
-    document.getElementById('emailOut').value = 'Sibling mode currently only builds Risk-Free Assessment emails — switch the mode toggle at the top to "Risk-Free Assessment" to generate the combined email, or turn off Sibling mode to draft a Progress Update for just the active tab.';
+    document.getElementById('emailOut').value = generateSiblingProgressEmail();
     return;
   }
   const student = document.getElementById('studentName').value.trim() || 'the student';
@@ -2632,6 +2831,24 @@ document.getElementById('copyBtn').addEventListener('click', async ()=>{
   // Fallback: plain-text-only copy (bullet character still shows, just not as a real <li>)
   ta.select();
   document.execCommand('copy');
+  showCopied();
+});
+
+document.getElementById('copyHeaderBtn').addEventListener('click', async ()=>{
+  const inp = document.getElementById('emailHeaderOut');
+  const ok = document.getElementById('copyHeaderOk');
+  const showCopied = ()=>{ ok.style.display = 'inline'; setTimeout(()=>ok.style.display='none', 1600); };
+  try{
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      await navigator.clipboard.writeText(inp.value);
+    } else {
+      inp.select();
+      document.execCommand('copy');
+    }
+  }catch(e){
+    inp.select();
+    document.execCommand('copy');
+  }
   showCopied();
 });
 </script>
