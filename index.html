@@ -265,6 +265,10 @@
     padding:8px 12px;display:block;margin-top:6px;
   }
   .status.ok{color:var(--up);font-weight:600;}
+  .compare-warning{
+    background:#fdf3d9;border:1.5px solid #e0b84c;border-radius:6px;
+    padding:10px 14px;font-size:13px;color:#6b5215;margin-bottom:14px;line-height:1.45;
+  }
 
   .meta-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;}
   @media (max-width:700px){.meta-grid{grid-template-columns:1fr 1fr;}}
@@ -579,7 +583,8 @@
       <div class="hint">Check the boxes you want to mention in the email</div>
     </div>
     <div class="step-body">
-      <p class="desc" id="tableDesc">"Improved" is auto-checked where the score went up. "New at this level" is auto-checked for topics that only appear on the current assessment (grade-level-up case). Uncheck anything you don't want in the email, or edit any cell directly.</p>
+      <p class="desc" id="tableDesc">"Mention?" is auto-checked for topics that are newly mastered since the last update. Uncheck anything you don't want in the email, or edit any cell directly.</p>
+      <div class="compare-warning" id="compareWarning" style="display:none;"></div>
       <div id="tableHost"></div>
       <div class="cat-add">
         <button class="btn-secondary btn-sm" id="addCatBtn">+ Add category</button>
@@ -1687,8 +1692,21 @@ function renderTable(){
 
   const descEl = document.getElementById('tableDesc');
   descEl.textContent = preMode
-    ? '"Showed mastery" is auto-checked for any topic scored 100% on this assessment. Uncheck anything you don\'t want in the email, or edit any cell directly.'
-    : '"Improved" is auto-checked where the score went up. "New at this level" is auto-checked for topics that only appear on the current assessment (grade-level-up case). Uncheck anything you don\'t want in the email, or edit any cell directly.';
+    ? '"Mention?" is auto-checked for any topic scored 100% on this assessment. Uncheck anything you don\'t want in the email, or edit any cell directly.'
+    : '"Mention?" is auto-checked for topics that are newly mastered since the last update (scored 100% now, and weren\'t already at 100% before). Uncheck anything you don\'t want in the email, or edit any cell directly.';
+
+  const warnEl = document.getElementById('compareWarning');
+  if(!preMode && dataset.categories.length){
+    const anyPrev = dataset.categories.some(cat=>cat.topics.some(t=>t.prev!==null && t.prev!==undefined && String(t.prev).trim()!==''));
+    if(!anyPrev){
+      warnEl.style.display = 'block';
+      warnEl.textContent = "None of these topics have a previous score, so nothing below is actually being compared \u2014 it's just showing current results. The \"Previous score\" field in Step 2 is just an overall summary number; the topic-by-topic comparison here only fills in when you upload both a previous and a current PDF in Step 1 (or type prev scores into the \"Prev\" column by hand).";
+    } else {
+      warnEl.style.display = 'none';
+    }
+  } else {
+    warnEl.style.display = 'none';
+  }
 
   if(!dataset.categories.length){
     host.innerHTML = '<div class="empty-note">No categories yet. Add one below.</div>';
@@ -1696,8 +1714,8 @@ function renderTable(){
   }
 
   const extraCols = preMode
-    ? `<th style="width:70px;">Current</th><th style="width:130px;">Showed mastery?</th>`
-    : `<th style="width:70px;">Prev</th><th style="width:70px;">Current</th><th style="width:60px;">Δ</th><th style="width:90px;">Improved?</th><th style="width:90px;">New?</th>`;
+    ? `<th style="width:70px;">Current</th><th style="width:90px;">Mention?</th>`
+    : `<th style="width:70px;">Prev</th><th style="width:70px;">Current</th><th style="width:60px;">Δ</th><th style="width:90px;">Mention?</th>`;
 
   let html = `<table class="results"><thead><tr>
     <th style="width:28px;"></th>
@@ -1717,12 +1735,12 @@ function renderTable(){
       const rowId = `${ci}_${ti}`;
 
       if(preMode){
-        const masteryChecked = t.checked !== undefined ? t.checked : isFullScore(t.curr);
+        const mentionChecked = t.checked !== undefined ? t.checked : isMentionWorthy(t);
         html += `<tr data-row="${rowId}">
           <td></td>
           <td><input type="text" class="topicName" data-row="${rowId}" value="${escapeAttr(t.name)}"></td>
           <td><input type="text" class="num currVal" data-row="${rowId}" value="${t.curr!==null?escapeAttr(t.curr):''}" placeholder="—"></td>
-          <td style="text-align:center;"><input type="checkbox" class="masteryChk" data-row="${rowId}" ${masteryChecked?'checked':''}></td>
+          <td style="text-align:center;"><input type="checkbox" class="mentionChk" data-row="${rowId}" ${mentionChecked?'checked':''}></td>
           <td><button class="tag-del delRowBtn" data-row="${rowId}" title="Delete row">✕</button></td>
         </tr>`;
         return;
@@ -1730,25 +1748,23 @@ function renderTable(){
 
       const pv = t.prev!==null ? toComparableNum(t.prev) : null;
       const cv = t.curr!==null ? toComparableNum(t.curr) : null;
-      let deltaText = '—', autoImproved=false, isNew=false;
+      let deltaText = '—';
       if(pv!==null && cv!==null){
         const d = Math.round((cv-pv)*10)/10;
         deltaText = (d>0?'+':'')+d+'%pt';
-        autoImproved = d>0;
       } else if(pv===null && cv!==null){
-        deltaText = '<span class="pill na">new</span>'; isNew=true;
+        deltaText = '<span class="pill na">new</span>';
       } else if(pv!==null && cv===null){
         deltaText = '<span class="pill na">retired</span>';
       }
-      const improvedChecked = t.checked !== undefined ? t.checked : autoImproved;
+      const mentionChecked = t.checked !== undefined ? t.checked : isMentionWorthy(t);
       html += `<tr data-row="${rowId}">
         <td></td>
         <td><input type="text" class="topicName" data-row="${rowId}" value="${escapeAttr(t.name)}"></td>
         <td><input type="text" class="num prevVal" data-row="${rowId}" value="${t.prev!==null?escapeAttr(t.prev):''}" placeholder="—"></td>
         <td><input type="text" class="num currVal" data-row="${rowId}" value="${t.curr!==null?escapeAttr(t.curr):''}" placeholder="—"></td>
         <td>${deltaText}</td>
-        <td style="text-align:center;"><input type="checkbox" class="improveChk" data-row="${rowId}" ${improvedChecked?'checked':''} ${(pv===null||cv===null)?'disabled':''}></td>
-        <td style="text-align:center;"><input type="checkbox" class="newChk" data-row="${rowId}" ${isNew?'checked':''} ${!isNew?'disabled':''}></td>
+        <td style="text-align:center;"><input type="checkbox" class="mentionChk" data-row="${rowId}" ${mentionChecked?'checked':''}></td>
         <td><button class="tag-del delRowBtn" data-row="${rowId}" title="Delete row">✕</button></td>
       </tr>`;
     });
@@ -1785,7 +1801,7 @@ function renderTable(){
     dataset.categories[ci].topics[ti].curr = e.target.value || null;
     renderTable();
   }));
-  host.querySelectorAll('.masteryChk,.improveChk').forEach(el=>el.addEventListener('change', e=>{
+  host.querySelectorAll('.mentionChk').forEach(el=>el.addEventListener('change', e=>{
     const [ci,ti] = e.target.dataset.row.split('_').map(Number);
     dataset.categories[ci].topics[ti].checked = e.target.checked;
   }));
@@ -1849,6 +1865,19 @@ function isFullScore(s){
   if(frac) return parseFloat(frac[1]) === parseFloat(frac[2]) && parseFloat(frac[2]) > 0;
   const v = toComparableNum(s);
   return v === 100;
+}
+
+/* The single rule for "should this be in the email" everywhere in the tool
+   (main table, both pre-assessment and comparison mode, and every
+   Additional Assessment card): a topic is mention-worthy if it's fully
+   mastered now AND wasn't already fully mastered before. For a pre-assessment
+   or single-snapshot topic there's no "before" at all (prev is empty), so
+   this reduces to "just show anything mastered right now" \u2014 same as
+   comparison mode's "newly mastered," just with an always-empty prior state. */
+function isMentionWorthy(t){
+  if(!isFullScore(t.curr)) return false;
+  if(t.prev===null || t.prev===undefined || String(t.prev).trim()==='') return true;
+  return !isFullScore(t.prev);
 }
 
 function renderExtra(){
@@ -2047,7 +2076,8 @@ function renderExtra(){
         const existingByName = new Map(card.topics.map(t=>[t.name.toLowerCase(), t]));
         card.topics = parsed.topics.map(nt=>{
           const existing = existingByName.get(nt.name.toLowerCase());
-          return {name:nt.name, curr:nt.value, prev: existing ? existing.prev : '', checked:true};
+          const prev = existing ? existing.prev : '';
+          return {name:nt.name, curr:nt.value, prev, checked:isMentionWorthy({curr:nt.value, prev})};
         });
         if(parsed.overall) card.score = parsed.overall;
         card._narrativeCurr = null;
@@ -2059,7 +2089,10 @@ function renderExtra(){
         const nrMastered = narrativeMasteredFlat(nr, false);
         card.topics = nrMastered.length
           ? nrMastered.map(name=>({name, curr:'Mastered', prev:'', checked:true}))
-          : nr.fallbackCategories.map(c=>({name:c.name, curr:fracLabelToPct(c.num,c.den), prev:'', checked:true}));
+          : nr.fallbackCategories.map(c=>{
+              const curr = fracLabelToPct(c.num,c.den);
+              return {name:c.name, curr, prev:'', checked:isMentionWorthy({curr, prev:''})};
+            });
         if(nr.overall) card.score = fracLabelToPct(nr.overall.num, nr.overall.den);
         if(nr.studentName && !document.getElementById('studentName').value){
           document.getElementById('studentName').value = firstNameOf(nr.studentName);
@@ -2111,7 +2144,9 @@ function renderExtra(){
           const prevFlat = new Map(prevNr.fallbackCategories.map(c=>[c.name.toLowerCase(), c]));
           card.topics = currNr.fallbackCategories.map(c=>{
             const m = prevFlat.get(c.name.toLowerCase());
-            return {name:c.name, curr:fracLabelToPct(c.num,c.den), prev: m?fracLabelToPct(m.num,m.den):'', checked:true};
+            const curr = fracLabelToPct(c.num,c.den);
+            const prev = m?fracLabelToPct(m.num,m.den):'';
+            return {name:c.name, curr, prev, checked:isMentionWorthy({curr, prev})};
           });
           statusEl.textContent = `Compared ${card.topics.length} categor${card.topics.length===1?'y':'ies'}. Review below.`;
         }
@@ -2122,7 +2157,7 @@ function renderExtra(){
         const usedNames = new Set();
         card.topics.forEach(t=>{
           const key = t.name.toLowerCase();
-          if(prevByName.has(key)){ t.prev = prevByName.get(key); usedNames.add(key); }
+          if(prevByName.has(key)){ t.prev = prevByName.get(key); usedNames.add(key); t.checked = isMentionWorthy(t); }
         });
         parsed.topics.forEach(t=>{
           if(!usedNames.has(t.name.toLowerCase())){
@@ -2180,7 +2215,7 @@ async function parseAnyAssessmentFile(file){
 function buildCardFromSingle(parsed){
   if(parsed.kind==='chart'){
     return {
-      topics: parsed.topics.map(nt=>({name:nt.name, curr:nt.value, prev:'', checked:true})),
+      topics: parsed.topics.map(nt=>({name:nt.name, curr:nt.value, prev:'', checked:isMentionWorthy({curr:nt.value, prev:''})})),
       score: parsed.overall || '', prevScore:'',
       studentName: parsed.studentName, narrativeCurr:null
     };
@@ -2189,7 +2224,10 @@ function buildCardFromSingle(parsed){
   const nrMastered = narrativeMasteredFlat(nr, false);
   const topics = nrMastered.length
     ? nrMastered.map(name=>({name, curr:'Mastered', prev:'', checked:true}))
-    : nr.fallbackCategories.map(c=>({name:c.name, curr:fracLabelToPct(c.num,c.den), prev:'', checked:true}));
+    : nr.fallbackCategories.map(c=>{
+        const curr = fracLabelToPct(c.num,c.den);
+        return {name:c.name, curr, prev:'', checked:isMentionWorthy({curr, prev:''})};
+      });
   return {
     topics, score: nr.overall ? fracLabelToPct(nr.overall.num, nr.overall.den) : '', prevScore:'',
     studentName: nr.studentName, narrativeCurr: nr
@@ -2205,7 +2243,8 @@ function buildCardFromPair(prevParsed, currParsed){
       const key = t.name.toLowerCase();
       const p = prevByName.get(key);
       if(p) used.add(key);
-      return {name:t.name, curr:t.value, prev:p||'', checked:true};
+      const curr = t.value, prev = p||'';
+      return {name:t.name, curr, prev, checked:isMentionWorthy({curr, prev})};
     });
     prevParsed.topics.forEach(t=>{
       if(!used.has(t.name.toLowerCase())) topics.push({name:t.name, prev:t.value, curr:'', checked:false});
@@ -2228,7 +2267,9 @@ function buildCardFromPair(prevParsed, currParsed){
     const prevFlat = new Map(prevNr.fallbackCategories.map(c=>[c.name.toLowerCase(), c]));
     topics = currNr.fallbackCategories.map(c=>{
       const m = prevFlat.get(c.name.toLowerCase());
-      return {name:c.name, curr:fracLabelToPct(c.num,c.den), prev: m?fracLabelToPct(m.num,m.den):'', checked:true};
+      const curr = fracLabelToPct(c.num,c.den);
+      const prev = m?fracLabelToPct(m.num,m.den):'';
+      return {name:c.name, curr, prev, checked:isMentionWorthy({curr, prev})};
     });
   }
   return {
@@ -2373,7 +2414,7 @@ function buildChildSection(childDataset, childExtraCharts, assessmentsGivenStr, 
   const mastery = [];
   childDataset.categories.forEach(cat=>{
     cat.topics.forEach(t=>{
-      const checked = t.checked !== undefined ? t.checked : isFullScore(t.curr);
+      const checked = t.checked !== undefined ? t.checked : isMentionWorthy(t);
       if(checked) mastery.push(t.name);
     });
   });
@@ -2558,37 +2599,19 @@ function buildProgressChildSection(childDataset, childExtraCharts, childMeta, na
   }
   text += `A skill-by-skill breakdown is attached to this email.\n\n`;
 
-  const improved = [], newTopics = [], mastery = [];
+  const mastery = [];
   (childDataset.categories||[]).forEach(cat=>{
     cat.topics.forEach(t=>{
-      if(preMode){
-        const checked = t.checked !== undefined ? t.checked : isFullScore(t.curr);
-        if(checked) mastery.push(t.name);
-      } else {
-        const pvT = t.prev!==null ? toComparableNum(t.prev) : null;
-        const cvT = t.curr!==null ? toComparableNum(t.curr) : null;
-        const autoImproved = pvT!==null && cvT!==null && cvT>pvT;
-        const improvedChecked = t.checked !== undefined ? t.checked : autoImproved;
-        const isNew = pvT===null && cvT!==null;
-        if(improvedChecked) improved.push(t.name);
-        if(isNew) newTopics.push(t.name);
-      }
+      const checked = t.checked !== undefined ? t.checked : isMentionWorthy(t);
+      if(checked) mastery.push(t.name);
     });
   });
 
-  if(preMode && mastery.length){
-    text += `${name} showed mastery of the following topics:\n\n`;
+  if(mastery.length){
+    text += preMode
+      ? `${name} showed mastery of the following topics:\n\n`
+      : `${name} showed mastery of the following topics since the last update:\n\n`;
     mastery.forEach(t=> text += `\u2022 ${t}\n`);
-    text += `\n`;
-  }
-  if(!preMode && improved.length){
-    text += `${name} improved on the following topics:\n\n`;
-    improved.forEach(t=> text += `\u2022 ${t}\n`);
-    text += `\n`;
-  }
-  if(!preMode && newTopics.length){
-    text += `${name} has also moved up to a new level, introducing some new topics ${pr.subj} ${pr.be} now being tested on:\n\n`;
-    newTopics.forEach(t=> text += `\u2022 ${t}\n`);
     text += `\n`;
   }
 
@@ -2599,14 +2622,9 @@ function buildProgressChildSection(childDataset, childExtraCharts, childMeta, na
     .filter(c => c.label.trim())
     .map(c => {
       const hasComparison = !!c.prevScore.trim() || c.topics.some(t=>t.prev && t.prev.trim());
-      const checkedImproved = c.topics.filter(t=>{
-        if(!t.checked || !t.name.trim()) return false;
-        if(!hasComparison) return true;
-        const pv2 = toComparableNum(t.prev), cv2 = toComparableNum(t.curr);
-        return pv2===null || cv2===null || cv2 > pv2;
-      }).map(t=>t.name.trim());
+      const mentioned = c.topics.filter(t=>t.checked && t.name.trim()).map(t=>t.name.trim());
 
-      if(!c.score.trim() && !checkedImproved.length) return null;
+      if(!c.score.trim() && !mentioned.length) return null;
 
       const label = forParentFacing(c.label.trim());
       let line = `Along with this assessment, we also checked ${pr.poss} ${label} skills`;
@@ -2616,10 +2634,8 @@ function buildProgressChildSection(childDataset, childExtraCharts, childMeta, na
         line += `. ${pr.subj[0].toUpperCase()+pr.subj.slice(1)} scored ${fracLabelToPct(c.score.trim())} overall`;
       }
       line += '.';
-      if(checkedImproved.length){
-        line += hasComparison
-          ? ` ${pr.subj[0].toUpperCase()+pr.subj.slice(1)} improved ${pr.poss} ${label} with the following skills:\n\n${checkedImproved.map(s=>`\u2022 ${s}`).join('\n')}\n`
-          : ` ${pr.subj[0].toUpperCase()+pr.subj.slice(1)} showed mastery in the following areas:\n\n${checkedImproved.map(s=>`\u2022 ${s}`).join('\n')}\n`;
+      if(mentioned.length){
+        line += ` ${pr.subj[0].toUpperCase()+pr.subj.slice(1)} showed mastery in the following areas:\n\n${mentioned.map(s=>`\u2022 ${s}`).join('\n')}\n`;
       }
       return line;
     })
@@ -2732,22 +2748,8 @@ document.getElementById('genBtn').addEventListener('click', ()=>{
       : `${student} scored ${currScore} overall on this assessment.`;
   }
 
-  const improved = [];
-  const newTopics = [];
   const mastery = [];
-  document.querySelectorAll('.improveChk').forEach(cb=>{
-    if(cb.checked){
-      const [ci,ti] = cb.dataset.row.split('_').map(Number);
-      improved.push(dataset.categories[ci].topics[ti].name);
-    }
-  });
-  document.querySelectorAll('.newChk').forEach(cb=>{
-    if(cb.checked){
-      const [ci,ti] = cb.dataset.row.split('_').map(Number);
-      newTopics.push(dataset.categories[ci].topics[ti].name);
-    }
-  });
-  document.querySelectorAll('.masteryChk').forEach(cb=>{
+  document.querySelectorAll('.mentionChk').forEach(cb=>{
     if(cb.checked){
       const [ci,ti] = cb.dataset.row.split('_').map(Number);
       mastery.push(dataset.categories[ci].topics[ti].name);
@@ -2762,14 +2764,9 @@ document.getElementById('genBtn').addEventListener('click', ()=>{
     .filter(c => c.label.trim())
     .map(c => {
       const hasComparison = !!c.prevScore.trim() || c.topics.some(t=>t.prev && t.prev.trim());
-      const checkedImproved = c.topics.filter(t=>{
-        if(!t.checked || !t.name.trim()) return false;
-        if(!hasComparison) return true;
-        const pv = toComparableNum(t.prev), cv = toComparableNum(t.curr);
-        return pv===null || cv===null || cv > pv; // include if improved, or if we can't compare
-      }).map(t=>t.name.trim());
+      const mentioned = c.topics.filter(t=>t.checked && t.name.trim()).map(t=>t.name.trim());
 
-      if(!c.score.trim() && !checkedImproved.length) return null;
+      if(!c.score.trim() && !mentioned.length) return null;
 
       let line = `On the ${c.label.trim()}`;
       if(hasComparison && c.prevScore.trim() && c.score.trim()){
@@ -2778,10 +2775,8 @@ document.getElementById('genBtn').addEventListener('click', ()=>{
         line += `, ${pr.subj} scored ${fracLabelToPct(c.score.trim())} overall`;
       }
       line += '.';
-      if(checkedImproved.length){
-        line += hasComparison
-          ? ` Newly mastered: ${listJoin(checkedImproved)}.`
-          : ` Highlights included ${listJoin(checkedImproved)}.`;
+      if(mentioned.length){
+        line += ` Showed mastery in: ${listJoin(mentioned)}.`;
       }
       return line;
     })
@@ -2798,19 +2793,11 @@ document.getElementById('genBtn').addEventListener('click', ()=>{
   }
   body += `${scoreLine} A skill-by-skill breakdown is attached to this email.\n\n`;
 
-  if(preMode && mastery.length){
-    body += `${student} showed mastery of the following topics:\n\n`;
+  if(mastery.length){
+    body += preMode
+      ? `${student} showed mastery of the following topics:\n\n`
+      : `${student} showed mastery of the following topics since the last update:\n\n`;
     mastery.forEach(t=> body += `• ${t}\n`);
-    body += `\n`;
-  }
-  if(!preMode && improved.length){
-    body += `${student} improved on the following topics:\n\n`;
-    improved.forEach(t=> body += `• ${t}\n`);
-    body += `\n`;
-  }
-  if(!preMode && newTopics.length){
-    body += `${student} has also moved up to a new level, introducing some new topics ${pr.subj} ${pr.be} now being tested on:\n\n`;
-    newTopics.forEach(t=> body += `• ${t}\n`);
     body += `\n`;
   }
   if(extraNotes.length){
