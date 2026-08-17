@@ -182,6 +182,17 @@
   .mode-toggle label.active span{color:var(--red);}
   .rfa-panel{background:#fff;border:1px solid var(--line);border-radius:8px;padding:18px 20px;margin-top:14px;}
   .rfa-panel h4{margin:0 0 10px 0;font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-soft);}
+
+  .sibling-tab{
+    background:#fff;border:1.5px solid var(--grey-light);border-radius:20px;
+    padding:6px 14px;font-size:13px;font-weight:700;cursor:pointer;color:var(--ink);
+  }
+  .sibling-tab.active{background:var(--red);border-color:var(--red);color:#fff;}
+  .sibling-tab-remove{
+    background:none;border:none;color:var(--ink-soft);cursor:pointer;
+    font-size:13px;padding:2px 4px;margin-left:-6px;margin-right:2px;
+  }
+  .sibling-tab-remove:hover{color:var(--red);}
   .toggle-row{display:flex;align-items:flex-start;gap:8px;font-size:13.5px;font-weight:600;margin-bottom:10px;cursor:pointer;}
   .toggle-row input{margin-top:2px;}
   .toggle-row .toggle-note{font-weight:400;color:var(--ink-soft);display:block;font-size:12.5px;margin-top:2px;}
@@ -389,6 +400,12 @@
     </div>
   </div>
 
+  <label class="toggle-row" style="display:flex;align-items:center;margin-top:12px;">
+    <input type="checkbox" id="siblingModeToggle">
+    <span style="margin-left:8px;">Sibling mode<span class="toggle-note" style="display:block;">Process each sibling through Steps 1-4 separately using the tabs below, then generate one combined email covering all of them. Currently works for Risk-Free Assessment emails.</span></span>
+  </label>
+  <div id="studentTabsHost" style="display:none;flex-wrap:wrap;gap:8px;align-items:center;margin-top:10px;"></div>
+
   <!-- STEP 1 -->
   <div class="step">
     <div class="step-head">
@@ -552,6 +569,151 @@ let filesChosen = []; // array of File objects, any mix of chart/report PDFs
 let dataset = { studentName:'', prevScore:'', prevDate:'', currScore:'', currDate:'',
                 categories: [] }; // categories: [{name, topics:[{name, prev, curr}]}]
 let catCounter = 0;
+
+/* ---------------------------------------------------------
+   SIBLING MODE — each tab is a full independent run through
+   Steps 1-4 (its own filesChosen, dataset, extraCharts), saved
+   and restored by swapping them into the same global variables
+   everything else already reads/writes. This means renderTable,
+   renderExtra, the auto-router, etc. never need to know sibling
+   mode exists — they just always operate on "whichever student
+   is currently active." Parent/staff/center/RFA toggles stay
+   shared across all tabs; only the per-child data swaps.
+--------------------------------------------------------- */
+let students = []; // [{id, dataset, extraCharts, extraCounter, filesChosen, meta}]
+let activeStudentId = null;
+let siblingCounter = 0;
+
+function siblingModeOn(){ return document.getElementById('siblingModeToggle').checked; }
+
+function captureMeta(){
+  return {
+    studentName: document.getElementById('studentName').value,
+    pronoun: document.getElementById('pronoun').value,
+    prevScore: document.getElementById('prevScore').value,
+    prevDate: document.getElementById('prevDate').value,
+    prevPlan: document.getElementById('prevPlan').value,
+    currScore: document.getElementById('currScore').value,
+    currDate: document.getElementById('currDate').value,
+    assessmentsGiven: document.getElementById('assessmentsGiven').value,
+    preAssessment: document.getElementById('preAssessmentToggle').checked,
+    planTopics: document.getElementById('planTopics').value
+  };
+}
+function restoreMeta(m){
+  document.getElementById('studentName').value = m.studentName||'';
+  document.getElementById('pronoun').value = m.pronoun||'they';
+  document.getElementById('prevScore').value = m.prevScore||'';
+  document.getElementById('prevDate').value = m.prevDate||'';
+  document.getElementById('prevPlan').value = m.prevPlan||'';
+  document.getElementById('currScore').value = m.currScore||'';
+  document.getElementById('currDate').value = m.currDate||'';
+  document.getElementById('assessmentsGiven').value = m.assessmentsGiven||'';
+  document.getElementById('preAssessmentToggle').checked = !!m.preAssessment;
+  document.getElementById('planTopics').value = m.planTopics||'';
+}
+function blankMeta(){
+  return {studentName:'', pronoun:'they', prevScore:'', prevDate:'', prevPlan:'',
+          currScore:'', currDate:'', assessmentsGiven:'', preAssessment:false, planTopics:''};
+}
+
+function snapshotActiveStudent(){
+  if(activeStudentId===null) return;
+  const s = students.find(s=>s.id===activeStudentId);
+  if(!s) return;
+  s.dataset = dataset;
+  s.extraCharts = extraCharts;
+  s.extraCounter = extraCounter;
+  s.filesChosen = filesChosen.slice();
+  s.meta = captureMeta();
+}
+
+function loadStudent(id){
+  snapshotActiveStudent();
+  const s = students.find(s=>s.id===id);
+  if(!s) return;
+  activeStudentId = id;
+  dataset = s.dataset;
+  extraCharts = s.extraCharts;
+  extraCounter = s.extraCounter;
+  filesChosen = s.filesChosen.slice();
+  restoreMeta(s.meta);
+  const isRfa = document.querySelector('input[name="emailMode"]:checked').value === 'rfa';
+  if(isRfa){
+    document.getElementById('preAssessmentToggle').checked = true;
+    dataset.singleChartMode = true;
+  }
+  renderFileList();
+  revealSteps();
+  renderTable();
+  renderExtra();
+  updateScoreChip();
+  renderStudentTabs();
+}
+
+function addSibling(){
+  snapshotActiveStudent();
+  siblingCounter++;
+  const s = {
+    id: siblingCounter,
+    dataset: { studentName:'', prevScore:'', prevDate:'', currScore:'', currDate:'', categories: [] },
+    extraCharts: [],
+    extraCounter: 0,
+    filesChosen: [],
+    meta: blankMeta()
+  };
+  students.push(s);
+  loadStudent(s.id);
+}
+
+function removeSibling(id){
+  students = students.filter(s=>s.id!==id);
+  if(!students.length){
+    document.getElementById('siblingModeToggle').checked = false;
+    onSiblingModeChange();
+  } else if(activeStudentId===id){
+    activeStudentId = null; // avoid re-snapshotting into the removed slot
+    loadStudent(students[0].id);
+  } else {
+    renderStudentTabs();
+  }
+}
+
+function renderStudentTabs(){
+  const host = document.getElementById('studentTabsHost');
+  if(!siblingModeOn() || !students.length){ host.style.display='none'; return; }
+  host.style.display='flex';
+  host.innerHTML = students.map(s=>{
+    const name = (s.id===activeStudentId ? document.getElementById('studentName').value : s.meta.studentName) || `Sibling ${s.id}`;
+    const active = s.id===activeStudentId;
+    return `<span style="display:inline-flex;align-items:center;">
+      <button type="button" class="sibling-tab${active?' active':''}" data-id="${s.id}">${escapeAttr(name)}</button>
+      <button type="button" class="sibling-tab-remove" data-id="${s.id}" title="Remove this sibling">✕</button>
+    </span>`;
+  }).join('') + `<button type="button" class="btn-secondary btn-sm" id="addSiblingBtn">+ Add sibling</button>`;
+  host.querySelectorAll('.sibling-tab').forEach(b=>b.addEventListener('click', e=>loadStudent(+e.currentTarget.dataset.id)));
+  host.querySelectorAll('.sibling-tab-remove').forEach(b=>b.addEventListener('click', e=>{ e.stopPropagation(); removeSibling(+e.currentTarget.dataset.id); }));
+  document.getElementById('addSiblingBtn').addEventListener('click', addSibling);
+}
+
+function onSiblingModeChange(){
+  const host = document.getElementById('studentTabsHost');
+  if(siblingModeOn()){
+    if(!students.length){
+      // fold whatever's currently loaded into "Sibling 1" so nothing already
+      // entered gets lost when switching modes on
+      siblingCounter++;
+      const s = { id: siblingCounter, dataset, extraCharts, extraCounter, filesChosen, meta: captureMeta() };
+      students.push(s);
+      activeStudentId = s.id;
+    }
+    renderStudentTabs();
+  } else {
+    snapshotActiveStudent();
+    host.style.display = 'none';
+  }
+}
+document.getElementById('siblingModeToggle').addEventListener('change', onSiblingModeChange);
 
 /* ---------------------------------------------------------
    FILE PICKER (single multi-file drop zone)
@@ -744,6 +906,46 @@ function parseChart(rows){
 --------------------------------------------------------- */
 const LEGEND_RE = /^(Initial Assessment|Recent Assessment|Improvement|To Do|Mastered|Awareness|Initial Topic)(\s+(Initial Assessment|Recent Assessment|Improvement|To Do|Mastered|Awareness|Initial Topic))*$/i;
 
+/* The top summary cards ("HS Fundamental Skills 26/29", "Algebra Readiness A
+   17/22") interleave unpredictably in text order when there are 3-4 cards
+   side by side, which is why the main parser skips that section entirely.
+   But with exactly 2 cards, the title/fraction/label rows each land on one
+   shared row in matching left-right order — reliably splittable by the gap
+   between the two fraction groups. Only handles the 2-card case; 3+ cards
+   fall back to name-only (from the filename) with no per-assessment score. */
+function parseTwoCardScores(rows){
+  const joinRow = r => r.map(i=>i.text).join(' ').replace(/\s+/g,' ').trim();
+  let started = false;
+  let fractionRow = null, fractionMatch = null, titleRow = null;
+  for(const r of rows){
+    const l = joinRow(r);
+    if(/breakdown of the assessments/i.test(l)){ started = true; continue; }
+    if(!started) continue;
+    if(/^Assessment Topics$/i.test(l)) break;
+    const m = l.match(/^(\d+)\s*\/\s*(\d+)\s+(\d+)\s*\/\s*(\d+)$/);
+    if(m){
+      fractionRow = r; fractionMatch = m;
+    } else if(!fractionRow && l && !/^Skills Mastered/i.test(l)){
+      titleRow = r;
+    }
+  }
+  if(!fractionRow || !titleRow) return null;
+  const xs = [...fractionRow].map(i=>i.x).sort((a,b)=>a-b);
+  let bestGap = 0, splitX = null;
+  for(let i=1;i<xs.length;i++){
+    const gap = xs[i]-xs[i-1];
+    if(gap > bestGap){ bestGap = gap; splitX = (xs[i]+xs[i-1])/2; }
+  }
+  if(splitX===null) return null;
+  const leftTitle = titleRow.filter(i=>i.x < splitX).map(i=>i.text).join(' ').trim();
+  const rightTitle = titleRow.filter(i=>i.x >= splitX).map(i=>i.text).join(' ').trim();
+  if(!leftTitle || !rightTitle) return null;
+  return [
+    {name:leftTitle, num:fractionMatch[1], den:fractionMatch[2]},
+    {name:rightTitle, num:fractionMatch[3], den:fractionMatch[4]}
+  ];
+}
+
 function parseNarrativeReport(rows){
   const joinRow = r => r.map(i=>i.text).join(' ').replace(/\s+/g,' ').trim();
   const fullText = rows.map(joinRow).join('\n');
@@ -836,7 +1038,7 @@ function parseNarrativeReport(rows){
   });
 
   return {mode: isMastery ? 'mastery' : 'assessment', studentName, date:dateStr,
-          categories, fallbackCategories, overall};
+          categories, fallbackCategories, overall, topAssessments: parseTwoCardScores(rows)};
 }
 
 /* Numerical Fluency shows up as its own category ("Addition and Subtraction
@@ -947,7 +1149,8 @@ function foldNarrativeSingle(report){
     currScore: report.overall ? fracLabelToPct(report.overall.num, report.overall.den) : '',
     currDate: report.date || '',
     categories: [{name: mastered.length ? 'Mastered Concepts' : 'Skill Areas', topics}],
-    nfCategories: narrativeNfCategories(report)
+    nfCategories: narrativeNfCategories(report),
+    topAssessments: report.topAssessments
   };
 }
 
@@ -995,7 +1198,8 @@ function mergeTwoNarrativeReports(prevReport, currReport){
     currScore: currReport.overall ? fracLabelToPct(currReport.overall.num, currReport.overall.den) : '',
     currDate: currReport.date || '',
     categories: [{name: havesDetail ? 'Newly Mastered Concepts' : 'Skill Areas', topics}],
-    nfCategories: narrativeNfCategories(currReport)
+    nfCategories: narrativeNfCategories(currReport),
+    topAssessments: currReport.topAssessments
   };
 }
 
@@ -1062,6 +1266,13 @@ function assessmentLabelFromCheckup(checkupText){
    the form tag stays intact in the "Assessments given" field itself. */
 function forParentFacing(label){
   return (label||'').replace(/\s+(A|B|Full)(?=\s*(\(|$))/i, '').trim();
+}
+
+function listJoin(arr){
+  if(arr.length===0) return '';
+  if(arr.length===1) return arr[0];
+  if(arr.length===2) return `${arr[0]} and ${arr[1]}`;
+  return arr.slice(0,-1).join(', ') + ', and ' + arr[arr.length-1];
 }
 
 function guessAssessmentNamesFromFilename(filename){
@@ -1248,6 +1459,7 @@ document.getElementById('parseBtn').addEventListener('click', async ()=>{
     revealSteps();
     renderExtra();
     if(groups.size) document.getElementById('extraDetails').open = true;
+    renderStudentTabs();
 
     statusEl.innerHTML = `Sorted ${classified.length} file(s). Review below: everything is editable if something landed in the wrong place.<div class="sort-summary"><ul>${summary.map(s=>`<li>${s}</li>`).join('')}</ul></div>`;
     statusEl.className = 'status ok';
@@ -1280,6 +1492,7 @@ function renderMeta(){
     document.getElementById(id).oninput = ()=>{
       dataset[id] = document.getElementById(id).value;
       updateScoreChip();
+      if(id==='studentName') renderStudentTabs();
     };
   });
 }
@@ -1340,7 +1553,7 @@ function renderTable(){
       const rowId = `${ci}_${ti}`;
 
       if(preMode){
-        const masteryChecked = isFullScore(t.curr);
+        const masteryChecked = t.checked !== undefined ? t.checked : isFullScore(t.curr);
         html += `<tr data-row="${rowId}">
           <td></td>
           <td><input type="text" class="topicName" data-row="${rowId}" value="${escapeAttr(t.name)}"></td>
@@ -1353,16 +1566,17 @@ function renderTable(){
 
       const pv = t.prev!==null ? toComparableNum(t.prev) : null;
       const cv = t.curr!==null ? toComparableNum(t.curr) : null;
-      let deltaText = '—', improvedChecked=false, isNew=false;
+      let deltaText = '—', autoImproved=false, isNew=false;
       if(pv!==null && cv!==null){
         const d = Math.round((cv-pv)*10)/10;
         deltaText = (d>0?'+':'')+d+'%pt';
-        improvedChecked = d>0;
+        autoImproved = d>0;
       } else if(pv===null && cv!==null){
         deltaText = '<span class="pill na">new</span>'; isNew=true;
       } else if(pv!==null && cv===null){
         deltaText = '<span class="pill na">retired</span>';
       }
+      const improvedChecked = t.checked !== undefined ? t.checked : autoImproved;
       html += `<tr data-row="${rowId}">
         <td></td>
         <td><input type="text" class="topicName" data-row="${rowId}" value="${escapeAttr(t.name)}"></td>
@@ -1406,6 +1620,10 @@ function renderTable(){
     const [ci,ti] = e.target.dataset.row.split('_').map(Number);
     dataset.categories[ci].topics[ti].curr = e.target.value || null;
     renderTable();
+  }));
+  host.querySelectorAll('.masteryChk,.improveChk').forEach(el=>el.addEventListener('change', e=>{
+    const [ci,ti] = e.target.dataset.row.split('_').map(Number);
+    dataset.categories[ci].topics[ti].checked = e.target.checked;
   }));
 }
 
@@ -1906,7 +2124,9 @@ const ASSESSMENT_BLURBS = [
   {pattern: /Algebra Readiness/i,
    text: "The Algebra Readiness assessment is a middle school capstone evaluation that covers all of the skills we want a student to have mastered before beginning 9th grade Algebra 1."},
   {pattern: /Checkup\s*#?\s*5\b|Level\s*5\b/i,
-   text: "We've found that Checkup #5 tends to be more advanced than most 5th grade curriculum in the area, covering topics like integers, one-step algebraic equations, and order of operations (MDAS). We generally consider it an advanced 5th grade to early 6th grade level assessment."}
+   text: "We've found that Checkup #5 tends to be more advanced than most 5th grade curriculum in the area, covering topics like integers, one-step algebraic equations, and order of operations (MDAS). We generally consider it an advanced 5th grade to early 6th grade level assessment."},
+  {pattern: /HS Fundamental|High School Fundamental/i,
+   text: "The High School Fundamental Skills assessment evaluates a student's computational mastery, the foundation necessary for success in high school-level math courses."}
 ];
 function findBlurb(label){
   const hit = ASSESSMENT_BLURBS.find(b=>b.pattern.test(label));
@@ -1940,13 +2160,69 @@ function pronounSet(p){
   return {subj:'they',obj:'them',poss:'their',be:'are'};
 }
 
+/* Builds the assessment-walkthrough + mastery list for one child, from raw
+   data rather than the live DOM — used by both the single-student RFA email
+   (reading the currently active globals) and the sibling email (reading
+   each saved student snapshot in turn, since only one tab's data lives in
+   the DOM at a time). */
+function buildChildSection(childDataset, childExtraCharts, assessmentsGivenStr, name, pr, center){
+  let text = '';
+
+  childExtraCharts.forEach(c=>{
+    if(!c.label.trim() || !c.score.trim()) return;
+    const blurb = findBlurb(c.label);
+    let line = `We also had ${name} work through the ${forParentFacing(c.label.trim())} assessment`;
+    line += blurb ? `. ${blurb}` : '.';
+    line += ` ${pr.subj[0].toUpperCase()+pr.subj.slice(1)} scored ${fracLabelToPct(c.score.trim())} overall.`;
+    text += `${line}\n\n`;
+  });
+
+  const topAssessments = childDataset.topAssessments;
+  if(topAssessments && topAssessments.length){
+    const names = topAssessments.map(a=>forParentFacing(a.name));
+    text += `I ended up giving ${name} our ${listJoin(names)} assessment${topAssessments.length>1?'s':''}.\n\n`;
+    topAssessments.forEach(a=>{
+      const pct = fracLabelToPct(a.num, a.den);
+      const blurb = findBlurb(a.name);
+      let line = `On the ${forParentFacing(a.name)} assessment, ${name} scored ${pct} overall`;
+      line += blurb ? `. ${blurb}` : '.';
+      text += `${line}\n\n`;
+    });
+    text += `We aim for students to score somewhere around ${STANDARD_SCORE_RANGE} on an initial assessment, enough to show real prior knowledge while still leaving clear room to grow.\n\n`;
+  } else {
+    const assessmentsGiven = (assessmentsGivenStr||'').split(',').map(s=>s.trim()).filter(Boolean);
+    const mainLabel = assessmentsGiven.find(n => /^Level \d|^Checkup|^Computation|^High School|^HS Fundamental|^Algebra Readiness/i.test(n)) || assessmentsGiven[0] || '';
+    const mainLabelClean = forParentFacing(mainLabel);
+    const mainBlurb = mainLabel ? findBlurb(mainLabel) : '';
+    const score = fracLabelToPct(childDataset.currScore || '');
+    text += `I ended up giving ${name} ${mainLabelClean ? 'our ' + mainLabelClean + ' Assessment' : 'an initial assessment'}`;
+    if(mainBlurb) text += `. ${mainBlurb}`;
+    text += `\n\nWe aim for students to score somewhere around ${STANDARD_SCORE_RANGE} on an initial assessment, enough to show real prior knowledge while still leaving clear room to grow. ${name} scored ${score || '[score]'} overall`;
+    text += center.scoreVoice === 'warm' ? `, which is a great starting point!\n\n` : `, indicating some gaps to close but a solid enough foundation to start building on right away.\n\n`;
+  }
+
+  const mastery = [];
+  childDataset.categories.forEach(cat=>{
+    cat.topics.forEach(t=>{
+      const checked = t.checked !== undefined ? t.checked : isFullScore(t.curr);
+      if(checked) mastery.push(t.name);
+    });
+  });
+  if(mastery.length){
+    text += `${name} showed mastery of the following topics:\n\n`;
+    mastery.forEach(t=> text += `* ${t}\n`);
+    text += `\n`;
+  }
+
+  return text;
+}
+
 function generateRfaEmail(){
   const student = document.getElementById('studentName').value.trim() || 'the student';
   const parent = document.getElementById('parentName').value.trim() || 'there';
   const staff = document.getElementById('staffName').value.trim() || '[Your name]';
   const pr = pronounSet(document.getElementById('pronoun').value);
   const center = CENTER_INFO[document.getElementById('emailCenter').value];
-  const score = fracLabelToPct(dataset.currScore || document.getElementById('currScore').value.trim());
   const scheduling = document.getElementById('rfaScheduling').checked;
   const learningPlan = document.getElementById('rfaLearningPlan').checked;
   const dayInLife = document.getElementById('rfaDayInLife').checked;
@@ -1954,45 +2230,12 @@ function generateRfaEmail(){
   const startDate = document.getElementById('rfaStartDate').value.trim();
   const commitment = document.getElementById('rfaCommitment').value.trim();
   const assessmentsGivenRaw = document.getElementById('assessmentsGiven').value.trim();
-  const assessmentsGiven = assessmentsGivenRaw ? assessmentsGivenRaw.split(',').map(s=>s.trim()).filter(Boolean) : [];
   const planTopics = document.getElementById('planTopics').value.split('\n').map(s=>s.trim()).filter(Boolean);
-
-  const mastery = [];
-  document.querySelectorAll('.masteryChk').forEach(cb=>{
-    if(cb.checked){
-      const [ci,ti] = cb.dataset.row.split('_').map(Number);
-      if(dataset.categories[ci] && dataset.categories[ci].topics[ti]) mastery.push(dataset.categories[ci].topics[ti].name);
-    }
-  });
 
   let body = `Hi ${parent}!\n\n`;
   body += `It was great to meet you and ${student} during the assessment today! As promised, digital copies of the documents ${pr.subj} took home are attached to this email for your convenience. ${student} was a pleasure to work with and I look forward to getting ${pr.obj} started with us!\n\n`;
 
-  // walk through additional (warm-up/fluency) assessments first, matching the order given
-  extraCharts.forEach(c=>{
-    if(!c.label.trim() || !c.score.trim()) return;
-    const blurb = findBlurb(c.label);
-    let line = `We also had ${student} work through the ${forParentFacing(c.label.trim())} assessment`;
-    if(blurb) line += `. ${blurb}`;
-    else line += '.';
-    line += ` ${pr.subj[0].toUpperCase()+pr.subj.slice(1)} scored ${fracLabelToPct(c.score.trim())} overall.`;
-    body += `${line}\n\n`;
-  });
-
-  // main assessment
-  const mainLabel = assessmentsGiven.find(n => /^Level \d|^Checkup|^Computation|^High School|^HS Fundamental|^Algebra Readiness/i.test(n)) || assessmentsGiven[0] || '';
-  const mainLabelClean = forParentFacing(mainLabel);
-  const mainBlurb = mainLabel ? findBlurb(mainLabel) : '';
-  body += `I ended up giving ${student} ${mainLabelClean ? 'our ' + mainLabelClean + ' Assessment' : 'an initial assessment'}`;
-  if(mainBlurb) body += `. ${mainBlurb}`;
-  body += `\n\nWe aim for students to score somewhere around ${STANDARD_SCORE_RANGE} on an initial assessment, enough to show real prior knowledge while still leaving clear room to grow. ${student} scored ${score || '[score]'} overall`;
-  body += center.scoreVoice === 'warm' ? `, which is a great starting point!\n\n` : `, indicating some gaps to close but a solid enough foundation to start building on right away.\n\n`;
-
-  if(mastery.length){
-    body += `${student} showed mastery of the following topics:\n\n`;
-    mastery.forEach(t=> body += `* ${t}\n`);
-    body += `\n`;
-  }
+  body += buildChildSection(dataset, extraCharts, assessmentsGivenRaw, student, pr, center);
 
   if(learningPlan){
     if(planTopics.length){
@@ -2022,7 +2265,7 @@ function generateRfaEmail(){
   if(scheduling){
     body += `Once the enrollment documents are complete, you'll get a link to our online scheduling system, AppointyM, where you can book sessions at your convenience.\n\n`;
   } else {
-    body += `Once the enrollment documents are complete, just let us know what times generally work best and we'll get ${student} on the schedule.\n\n`;
+    body += `Once the enrollment documents are complete, we'll get ${student}'s binder ready to go — ${center.name} runs on a drop-in basis, so ${pr.subj} can come in whenever works for your schedule.\n\n`;
   }
 
   body += `If you have any questions, please let us know! We're looking forward to working with ${student}.\n\n`;
@@ -2031,10 +2274,87 @@ function generateRfaEmail(){
   return body;
 }
 
+/* Combined email covering every sibling tab. Shares one greeting, one
+   enrollment ask, and one closing; each child gets their own assessment
+   walkthrough + mastery section from buildChildSection using that child's
+   saved snapshot (not the live DOM, since only the active tab is "live"). */
+function generateSiblingRfaEmail(){
+  snapshotActiveStudent(); // make sure the currently-open tab's edits are included
+
+  const parent = document.getElementById('parentName').value.trim() || 'there';
+  const staff = document.getElementById('staffName').value.trim() || '[Your name]';
+  const center = CENTER_INFO[document.getElementById('emailCenter').value];
+  const scheduling = document.getElementById('rfaScheduling').checked;
+  const learningPlan = document.getElementById('rfaLearningPlan').checked;
+  const dayInLife = document.getElementById('rfaDayInLife').checked;
+  const homework = document.getElementById('rfaHomework').checked;
+  const startDate = document.getElementById('rfaStartDate').value.trim();
+  const commitment = document.getElementById('rfaCommitment').value.trim();
+
+  const kids = students.map(s=>{
+    const name = firstNameOf(s.meta.studentName) || s.dataset.studentName || 'the student';
+    return {
+      name,
+      pr: pronounSet(s.meta.pronoun || 'they'),
+      dataset: s.dataset,
+      extraCharts: s.extraCharts,
+      assessmentsGiven: s.meta.assessmentsGiven,
+      planTopics: (s.meta.planTopics||'').split('\n').map(t=>t.trim()).filter(Boolean)
+    };
+  });
+  const names = kids.map(k=>k.name);
+
+  let body = `Hi ${parent}!\n\n`;
+  body += `It was great to meet you and ${listJoin(names)} during their assessments today! As promised, digital copies of the documents they took home are attached to this email for your convenience. Both were a pleasure to work with and I look forward to getting them started with us!\n\n`;
+
+  kids.forEach(k=>{
+    body += `${k.name}\n\n`;
+    body += buildChildSection(k.dataset, k.extraCharts, k.assessmentsGiven, k.name, k.pr, center);
+    if(k.planTopics.length){
+      body += `Some of ${k.pr.poss} key areas to work on include:\n\n`;
+      k.planTopics.forEach(t=> body += `* ${t}\n`);
+      body += `\n`;
+    }
+  });
+
+  if(learningPlan){
+    body += `The attached Learning Plans detail everything we'd work on with each of them moving forward. Those skills get tackled a few at a time, with enough variety to keep things engaging while making sure they stick.\n\n`;
+  }
+  if(dayInLife){
+    body += `For a full look at what a session at Mathnasium is like day to day, see the attached Program Overview.\n\n`;
+  }
+  if(homework){
+    body += `We also help with homework when time allows, though our curriculum stays the priority. More detail on how that works is in the attached enrollment documents.\n\n`;
+  }
+
+  body += `To get ${listJoin(names)} enrolled, we just need to know their start date${kids.length>1?'s':''} and which commitment length${kids.length>1?'s':''} you'd like (Month-to-Month, 6-Month, or 12-Month) for each, which also lets us prorate the first month correctly. `;
+  if(startDate) body += `We could get them started as soon as ${startDate}. `;
+  body += `Our hours and pricing are in the attached Parent Pack for your reference.\n\n`;
+
+  if(scheduling){
+    body += `Once the enrollment documents are complete, you'll get a link to our online scheduling system, AppointyM, where you can book sessions at your convenience.\n\n`;
+  } else {
+    body += `Once the enrollment documents are complete, we'll get their binders ready to go — ${center.name} runs on a drop-in basis, so they can come in whenever works for your schedule.\n\n`;
+  }
+
+  body += `If you have any questions, please let us know! We're looking forward to working with ${listJoin(names)}.\n\n`;
+  body += `Best,\n${staff}\n${center.name}\n${center.phone}`;
+
+  return body;
+}
+
 document.getElementById('genBtn').addEventListener('click', ()=>{
   const isRfa = document.querySelector('input[name="emailMode"]:checked').value === 'rfa';
   if(isRfa){
-    document.getElementById('emailOut').value = generateRfaEmail();
+    if(siblingModeOn() && students.length > 1){
+      document.getElementById('emailOut').value = generateSiblingRfaEmail();
+    } else {
+      document.getElementById('emailOut').value = generateRfaEmail();
+    }
+    return;
+  }
+  if(siblingModeOn() && students.length > 1){
+    document.getElementById('emailOut').value = 'Sibling mode currently only builds Risk-Free Assessment emails — switch the mode toggle at the top to "Risk-Free Assessment" to generate the combined email, or turn off Sibling mode to draft a Progress Update for just the active tab.';
     return;
   }
   const student = document.getElementById('studentName').value.trim() || 'the student';
@@ -2085,13 +2405,6 @@ document.getElementById('genBtn').addEventListener('click', ()=>{
   const planTopics = document.getElementById('planTopics').value.split('\n').map(s=>s.trim()).filter(Boolean);
   const assessmentsGivenRaw = document.getElementById('assessmentsGiven').value.trim();
   const assessmentsGiven = assessmentsGivenRaw ? assessmentsGivenRaw.split(',').map(s=>s.trim()).filter(Boolean) : [];
-
-  function listJoin(arr){
-    if(arr.length===0) return '';
-    if(arr.length===1) return arr[0];
-    if(arr.length===2) return `${arr[0]} and ${arr[1]}`;
-    return arr.slice(0,-1).join(', ') + ', and ' + arr[arr.length-1];
-  }
 
   // additional assessments (Numerical Fluency, etc.) — comparison-aware
   const extraNotes = extraCharts
