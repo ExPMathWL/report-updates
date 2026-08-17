@@ -204,7 +204,7 @@
 
   .mode-toggle{
     display:flex;gap:0;border:1px solid var(--line);border-radius:8px;overflow:hidden;
-    margin-top:20px;background:#fff;
+    background:#fff;
   }
   .mode-toggle label{
     flex:1;text-align:center;padding:14px 16px;cursor:pointer;font-weight:700;font-size:14px;
@@ -218,6 +218,11 @@
   .mode-toggle label.active span{color:var(--red);}
   .rfa-panel{background:#fff;border:1px solid var(--line);border-radius:8px;padding:18px 20px;margin-top:14px;}
   .rfa-panel h4{margin:0 0 10px 0;font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-soft);}
+
+  .top-controls{display:flex;gap:12px;flex-wrap:wrap;align-items:stretch;margin-top:20px;}
+  .top-controls .mode-toggle{flex:1 1 280px;}
+  .top-controls-center{flex:0 0 160px;min-width:160px;margin:0;}
+  .top-controls-sibling{flex:1 1 100%;margin:2px 0 0 0;}
 
   .sibling-tab{
     background:#fff;border:1.5px solid var(--grey-light);border-radius:20px;
@@ -270,12 +275,21 @@
     font-size:14.5px;
     padding:9px 11px;
     border:1.5px solid var(--grey-light);
+    border-left:4px solid var(--grey-light);
     border-radius:6px;
     background:#fcfcfb;
     color:var(--ink);
   }
   .field input:hover,.field select:hover,.field textarea:hover{border-color:var(--grey);}
   .field input:focus,.field select:focus,.field textarea:focus{outline:2px solid var(--red);outline-offset:0;border-color:var(--red);background:#fff;}
+  .field input.has-value{border-left-color:var(--red);background:#fff;}
+
+  .field-section{margin-bottom:20px;}
+  .field-section:last-of-type{margin-bottom:0;}
+  .field-section-label{
+    font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;
+    color:var(--red);margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--line);
+  }
 
   input[type=checkbox],input[type=radio]{
     accent-color:var(--red);
@@ -399,7 +413,7 @@
 
 <div class="wrap">
 
-  <details class="howto" open>
+  <details class="howto">
     <summary>How to use this page</summary>
     <div class="howto-body">
       <div class="pull-note">
@@ -416,8 +430,8 @@
     </div>
   </details>
 
-  <div style="display:flex;gap:12px;align-items:stretch;flex-wrap:wrap;margin-top:20px;">
-    <div class="mode-toggle" id="emailModeToggle" style="margin-top:0;flex:1;min-width:280px;">
+  <div class="top-controls">
+    <div class="mode-toggle" id="emailModeToggle">
       <label class="active" id="modeLabelProgress">
         <input type="radio" name="emailMode" value="progress" checked>
         <span>Progress Update <span style="font-weight:400;">(existing family)</span></span>
@@ -427,19 +441,18 @@
         <span>Risk-Free Assessment <span style="font-weight:400;">(new lead)</span></span>
       </label>
     </div>
-    <div class="field" style="min-width:160px;">
+    <div class="field top-controls-center">
       <label>Center</label>
       <select id="emailCenter">
         <option value="WL">West Linn</option>
         <option value="MEV">East Vancouver</option>
       </select>
     </div>
+    <label class="toggle-row top-controls-sibling">
+      <input type="checkbox" id="siblingModeToggle">
+      <span>Sibling mode<span class="toggle-note">Run each sibling through Steps 1-4 on their own tab, then generate one combined email.</span></span>
+    </label>
   </div>
-
-  <label class="toggle-row" style="display:flex;align-items:center;margin-top:12px;">
-    <input type="checkbox" id="siblingModeToggle">
-    <span style="margin-left:8px;">Sibling mode<span class="toggle-note" style="display:block;">Process each sibling through Steps 1-4 separately using the tabs below, then generate one combined email covering all of them. Currently works for Risk-Free Assessment emails.</span></span>
-  </label>
   <div id="studentTabsHost" style="display:none;flex-wrap:wrap;gap:8px;align-items:center;margin-top:10px;"></div>
 
   <!-- STEP 1 -->
@@ -493,30 +506,44 @@
       <div class="hint">Edit anything that came in wrong</div>
     </div>
     <div class="step-body">
-      <div class="meta-grid" style="margin-bottom:16px;">
-        <div class="field"><label>Student first name</label><input type="text" id="studentName"></div>
-        <div class="field"><label>Parent / guardian name</label><input type="text" id="parentName" placeholder="e.g. Kristine"></div>
-        <div class="field"><label>Pronoun</label>
-          <select id="pronoun">
-            <option value="they">they / them / their</option>
-            <option value="she">she / her / hers</option>
-            <option value="he">he / him / his</option>
-          </select>
+      <div class="field-section">
+        <div class="field-section-label">Student &amp; family</div>
+        <div class="meta-grid">
+          <div class="field"><label>Student first name</label><input type="text" id="studentName"></div>
+          <div class="field"><label>Parent / guardian name</label><input type="text" id="parentName" placeholder="e.g. Kristine"></div>
+          <div class="field"><label>Pronoun</label>
+            <select id="pronoun">
+              <option value="they">they / them / their</option>
+              <option value="she">she / her / hers</option>
+              <option value="he">he / him / his</option>
+            </select>
+          </div>
         </div>
-        <div id="progressOnlyFields" style="display:contents;">
+      </div>
+
+      <div class="field-section" id="progressOnlyFields">
+        <div class="field-section-label">Previous assessment</div>
+        <div class="meta-grid">
           <div class="field"><label>Previous score</label><input type="text" id="prevScore" placeholder="e.g. 65%"></div>
           <div class="field"><label>Previous date</label><input type="text" id="prevDate" placeholder="e.g. 5/27/2026"></div>
           <div class="field"><label>Previous learning plan / level (optional)</label><input type="text" id="prevPlan" placeholder="e.g. Level 7"></div>
         </div>
-        <div class="field"><label id="currScoreLabel">Current score</label><input type="text" id="currScore" placeholder="e.g. 82%"></div>
-        <div class="field"><label id="currDateLabel">Current date</label><input type="text" id="currDate" placeholder="e.g. 8/5/2026"></div>
-        <div class="field"><label>Your name (sender)</label><input type="text" id="staffName" placeholder="e.g. Rebecca"></div>
-        <div class="field" style="grid-column:1 / -1;"><label>Assessments given (auto-detected where possible)</label><input type="text" id="assessmentsGiven" placeholder="e.g. Level 3, Level 3 Extension, Numerical Fluency Addition and Subtraction"></div>
       </div>
+
+      <div class="field-section">
+        <div class="field-section-label" id="currentSectionLabel">Assessment &amp; sender</div>
+        <div class="meta-grid">
+          <div class="field"><label id="currScoreLabel">Current score</label><input type="text" id="currScore" placeholder="e.g. 82%"></div>
+          <div class="field"><label id="currDateLabel">Current date</label><input type="text" id="currDate" placeholder="e.g. 8/5/2026"></div>
+          <div class="field"><label>Your name (sender)</label><input type="text" id="staffName" placeholder="e.g. Rebecca"></div>
+          <div class="field" style="grid-column:1 / -1;"><label>Assessments given (auto-detected where possible)</label><input type="text" id="assessmentsGiven" placeholder="e.g. Level 3, Level 3 Extension, Numerical Fluency Addition and Subtraction"></div>
+        </div>
+      </div>
+
       <div id="progressOnlyToggle">
         <label class="toggle-row" style="display:flex;align-items:center;margin-bottom:10px;">
           <input type="checkbox" id="preAssessmentToggle">
-          <span style="margin-left:8px;">This is a pre-assessment (only one chart, nothing to compare it to)</span>
+          <span>This is a pre-assessment (only one chart, nothing to compare it to)</span>
         </label>
         <p class="desc" style="margin-top:0;">When checked, the results table below switches from "improved" to "showed mastery" (100% topics), and the email skips the score-comparison language since there's no previous score.</p>
       </div>
@@ -655,11 +682,29 @@ function restoreMeta(m){
   document.getElementById('assessmentsGiven').value = m.assessmentsGiven||'';
   document.getElementById('preAssessmentToggle').checked = !!m.preAssessment;
   document.getElementById('planTopics').value = m.planTopics||'';
+  refreshFilledStates();
 }
 function blankMeta(){
   return {studentName:'', pronoun:'they', prevScore:'', prevDate:'', prevPlan:'',
           currScore:'', currDate:'', assessmentsGiven:'', preAssessment:false, planTopics:''};
 }
+
+/* Visual "this field has something in it" cue for Step 2 (a red left edge +
+   white background instead of the default off-white/grey) — the step packs
+   in a lot of text fields at once and it was hard to tell at a glance what
+   had already come in from the PDF vs. what was still blank. Only applied to
+   plain text inputs; selects always have "a value" so the signal wouldn't
+   mean anything there. */
+function refreshFilledStates(){
+  document.querySelectorAll('#stepMeta .field input[type="text"]').forEach(el=>{
+    el.classList.toggle('has-value', !!el.value.trim());
+  });
+}
+document.getElementById('stepMeta').addEventListener('input', e=>{
+  if(e.target.matches('.field input[type="text"]')){
+    e.target.classList.toggle('has-value', !!e.target.value.trim());
+  }
+});
 
 function snapshotActiveStudent(){
   if(activeStudentId===null) return;
@@ -1613,6 +1658,7 @@ function renderMeta(){
       if(id==='studentName') renderStudentTabs();
     };
   });
+  refreshFilledStates();
 }
 
 function updateScoreChip(){
@@ -2208,7 +2254,7 @@ document.querySelectorAll('input[name="emailMode"]').forEach(radio=>{
     document.getElementById('modeLabelProgress').classList.toggle('active', !isRfa);
     document.getElementById('modeLabelRfa').classList.toggle('active', isRfa);
     document.getElementById('rfaPanel').style.display = isRfa ? 'block' : 'none';
-    document.getElementById('progressOnlyFields').style.display = isRfa ? 'none' : 'contents';
+    document.getElementById('progressOnlyFields').style.display = isRfa ? 'none' : 'block';
     document.getElementById('progressOnlyToggle').style.display = isRfa ? 'none' : 'block';
     document.getElementById('currScoreLabel').textContent = isRfa ? 'Assessment score' : 'Current score';
     document.getElementById('currDateLabel').textContent = isRfa ? 'Assessment date' : 'Current date';
