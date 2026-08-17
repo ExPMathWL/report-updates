@@ -159,6 +159,33 @@
     width:16px;height:16px;font-size:10px;line-height:16px;padding:0;cursor:pointer;
   }
   .file-chip button:hover{background:var(--red);}
+
+  .file-date-note{font-size:12px;color:var(--grey);margin-top:10px;line-height:1.4;}
+  .file-row-list{display:flex;flex-direction:column;gap:6px;margin-top:8px;}
+  .file-row{
+    display:flex;align-items:center;gap:10px;
+    background:#f2f2f2;border:1px solid var(--line);border-radius:8px;
+    padding:7px 8px 7px 12px;
+  }
+  .file-row-name{
+    flex:1 1 auto;font-size:12.5px;font-weight:600;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  }
+  .file-row-detected{
+    flex:0 0 auto;font-size:11.5px;color:var(--grey);white-space:nowrap;
+  }
+  .file-row-detected.warn{color:var(--red);}
+  .file-row-date{
+    flex:0 0 160px;font-size:12.5px;padding:5px 8px;
+    border:1px solid var(--line);border-radius:6px;
+  }
+  .file-row-date:focus{outline:2px solid var(--red);outline-offset:0;border-color:var(--red);}
+  .file-row-date.has-value{border-color:var(--red);background:#fff;}
+  .file-row button.fileRemoveBtn{
+    flex:0 0 auto;background:var(--grey);color:#fff;border:none;border-radius:50%;
+    width:18px;height:18px;font-size:10px;line-height:18px;padding:0;cursor:pointer;
+  }
+  .file-row button.fileRemoveBtn:hover{background:var(--red);}
   .sort-summary{
     background:#f2f2f2;border-left:3px solid var(--red);border-radius:0 6px 6px 0;
     padding:10px 14px;font-size:13px;margin-top:12px;
@@ -720,6 +747,48 @@ document.getElementById('siblingModeToggle').addEventListener('change', onSiblin
 --------------------------------------------------------- */
 const DEFAULT_DROP_TEXT_ALL = 'Drag PDFs here (one or several), or click to choose';
 
+/* Lightweight peek at a PDF's own embedded date, just for display next to the
+   manual override field — does NOT get used for actual sorting/pairing (that
+   still goes through parseAnyAssessmentFile, which prefers file.manualDate). */
+async function detectDateForFile(file){
+  try{
+    const rows = await extractRowsFromPDF(file);
+    const narrative = parseNarrativeReport(rows);
+    if(narrative && (narrativeMasteredFlat(narrative, false).length || narrative.fallbackCategories.length)){
+      return narrative.date || '';
+    }
+    const chart = parseChart(rows);
+    const hasTopics = chart.categories.some(c=>c.topics.length);
+    if(hasTopics) return chart.dates[0] || '';
+  }catch(e){
+    console.error('Date detection failed for', file.name, e);
+  }
+  return '';
+}
+
+function isToday(dateStr){
+  if(!dateStr) return false;
+  const d = parseFlexDate(dateStr);
+  const now = new Date();
+  return d.getFullYear()===now.getFullYear() && d.getMonth()===now.getMonth() && d.getDate()===now.getDate();
+}
+
+function detectedLabelText(f){
+  if(f.detectedDate===undefined) return 'Checking PDF date…';
+  if(!f.detectedDate) return 'No date found in PDF';
+  return isToday(f.detectedDate) ? `PDF says ${f.detectedDate} (today - probably not the real test date)` : `PDF says ${f.detectedDate}`;
+}
+
+function refreshDetectedLabel(f){
+  const i = filesChosen.indexOf(f);
+  if(i<0) return;
+  const el = document.querySelector(`.file-row-detected[data-i="${i}"]`);
+  if(el){
+    el.textContent = detectedLabelText(f);
+    el.classList.toggle('warn', !!(f.detectedDate && isToday(f.detectedDate)));
+  }
+}
+
 function renderFileList(){
   const host = document.getElementById('fileListAll');
   const wrap = document.getElementById('dropWrapAll');
@@ -732,20 +801,41 @@ function renderFileList(){
   }
   wrap.classList.add('filled');
   nameEl.textContent = `${filesChosen.length} file${filesChosen.length===1?'':'s'} ready to analyze`;
-  host.innerHTML = `<div class="file-chip-list">${filesChosen.map((f,i)=>
-    `<span class="file-chip">${escapeAttr(f.name)}<button type="button" data-i="${i}" class="fileRemoveBtn" title="Remove">✕</button></span>`
-  ).join('')}</div>`;
+  host.innerHTML =
+    `<div class="file-date-note">Radius now stamps every PDF with today's date instead of the actual test date, so we can't always tell old vs. new apart automatically. If a student has more than one PDF here, type each one's real test date below (e.g. 5/27/2026) &mdash; leave blank to fall back to whatever date is inside the PDF.</div>` +
+    `<div class="file-row-list">${filesChosen.map((f,i)=>
+      `<div class="file-row">` +
+        `<span class="file-row-name" title="${escapeAttr(f.name)}">${escapeAttr(f.name)}</span>` +
+        `<span class="file-row-detected${f.detectedDate && isToday(f.detectedDate) ? ' warn' : ''}" data-i="${i}">${escapeAttr(detectedLabelText(f))}</span>` +
+        `<input type="text" class="file-row-date${f.manualDate?' has-value':''}" data-i="${i}" placeholder="Test date" value="${escapeAttr(f.manualDate||'')}">` +
+        `<button type="button" data-i="${i}" class="fileRemoveBtn" title="Remove">✕</button>` +
+      `</div>`
+    ).join('')}</div>`;
   host.querySelectorAll('.fileRemoveBtn').forEach(btn=>btn.addEventListener('click', e=>{
     filesChosen.splice(+e.currentTarget.dataset.i, 1);
     renderFileList();
   }));
+  host.querySelectorAll('.file-row-date').forEach(inp=>{
+    inp.addEventListener('input', e=>{
+      const f = filesChosen[+e.currentTarget.dataset.i];
+      if(f) f.manualDate = e.currentTarget.value.trim();
+      e.currentTarget.classList.toggle('has-value', !!e.currentTarget.value.trim());
+    });
+  });
 }
 
 function addFiles(fileList){
+  const added = [];
   Array.from(fileList||[]).forEach(f=>{
-    if(f.type==='application/pdf' || /\.pdf$/i.test(f.name)) filesChosen.push(f);
+    if(f.type==='application/pdf' || /\.pdf$/i.test(f.name)){ filesChosen.push(f); added.push(f); }
   });
   renderFileList();
+  added.forEach(f=>{
+    detectDateForFile(f).then(d=>{
+      f.detectedDate = d;
+      refreshDetectedLabel(f);
+    });
+  });
 }
 
 (function wireAllDrop(){
@@ -1337,6 +1427,11 @@ document.getElementById('parseBtn').addEventListener('click', async ()=>{
 
     const isMainNarrative = c => c.kind==='narrative' && c.assessmentNames.some(n=>/^(Level \d|Computation|High School|HS Fundamental|Algebra Readiness)/i.test(n));
     const byDate = (a,b) => parseFlexDate(a.dateRaw) - parseFlexDate(b.dateRaw);
+    // If 2+ files being compared as prev/curr share the same date (or no date) and none
+    // of them had a date typed in by hand, we genuinely can't tell which is older - flag
+    // it instead of silently guessing from whatever order they happened to be dropped in.
+    const orderIsUncertain = files => files.length > 1 && !files.some(f=>f.dateIsManual) &&
+      files.every(f=>parseFlexDate(f.dateRaw).getTime() === parseFlexDate(files[0].dateRaw).getTime());
 
     const narrativeMain = classified.filter(isMainNarrative).sort(byDate);
     const chartFiles = classified.filter(c=>c.kind==='chart').sort(byDate);
@@ -1388,6 +1483,9 @@ document.getElementById('parseBtn').addEventListener('click', async ()=>{
           merged.assessmentsGiven = label ? [label] : [];
         }
         summary.push(`Main assessment: <strong>${escapeAttr(prevC.file.name)}</strong> → <strong>${escapeAttr(currC.file.name)}</strong> (compared)`);
+        if(orderIsUncertain(mainUsed)){
+          summary.push(`&#9888; Couldn't tell which of these two came first &mdash; both show the same (or no) date and neither has a test date typed in. Double-check "Previous" vs "Current" below, or fill in the test dates above and re-analyze.`);
+        }
       }
       dataset = merged;
       document.getElementById('preAssessmentToggle').checked = !!dataset.singleChartMode;
@@ -1436,6 +1534,9 @@ document.getElementById('parseBtn').addEventListener('click', async ()=>{
         return;
       }
       files.sort(byDate);
+      if(orderIsUncertain(files)){
+        summary.push(`&#9888; <strong>${escapeAttr(label)}</strong>: couldn't tell which file is older &mdash; they show the same (or no) date and none has a test date typed in. Double-check "Previous" vs "Current" below, or fill in the test dates above and re-analyze.`);
+      }
       const built = files.length === 1 ? buildCardFromSingle(files[0]) : buildCardFromPair(files[0], files[files.length-1]);
       const card = {
         id: ++extraCounter, label, prevScore: built.prevScore, score: built.score,
@@ -1990,10 +2091,14 @@ async function parseAnyAssessmentFile(file){
   // Narrative reports often end with a "N / M P%" summary line, which is just enough
   // to fool the chart parser into thinking it found real data if it runs first —
   // producing a garbled table where every paragraph line becomes its own category.
+  // Radius now stamps every exported PDF with the download date rather than the
+  // actual test date, so a date typed into the file row (manualDate) always wins
+  // over whatever date text we can pull out of the PDF itself.
   const narrative = parseNarrativeReport(rows);
   if(narrative && (narrativeMasteredFlat(narrative, false).length || narrative.fallbackCategories.length)){
     return {kind:'narrative', file, studentName:narrative.studentName, narrative,
-            dateRaw:narrative.date||'', assessmentNames:guessAssessmentNamesFromFilename(file.name)};
+            dateRaw:file.manualDate||narrative.date||'', dateIsManual:!!file.manualDate,
+            assessmentNames:guessAssessmentNamesFromFilename(file.name)};
   }
 
   const chart = parseChart(rows);
@@ -2001,7 +2106,8 @@ async function parseAnyAssessmentFile(file){
   chart.categories.forEach(cat=>cat.topics.forEach(t=>chartTopics.push({name:t.name, value:t.percent})));
   if(chartTopics.length){
     return {kind:'chart', file, studentName:chart.studentName, overall:chart.scores[0]||'',
-            topics:chartTopics, dateRaw:chart.dates[0]||'', assessmentNames:[]};
+            topics:chartTopics, dateRaw:file.manualDate||chart.dates[0]||'', dateIsManual:!!file.manualDate,
+            assessmentNames:[]};
   }
 
   return null;
@@ -2210,7 +2316,7 @@ function buildChildSection(childDataset, childExtraCharts, assessmentsGivenStr, 
   });
   if(mastery.length){
     text += `${name} showed mastery of the following topics:\n\n`;
-    mastery.forEach(t=> text += `* ${t}\n`);
+    mastery.forEach(t=> text += `• ${t}\n`);
     text += `\n`;
   }
 
@@ -2240,14 +2346,14 @@ function generateRfaEmail(){
   if(learningPlan){
     if(planTopics.length){
       body += `Some of ${pr.poss} key areas to work on include:\n\n`;
-      planTopics.forEach(t=> body += `* ${t}\n`);
+      planTopics.forEach(t=> body += `• ${t}\n`);
       body += `\nThe attached Learning Plan details everything we'd work on with ${pr.obj}. Those skills get tackled a few at a time, with enough variety to keep things engaging while making sure they stick.\n\n`;
     } else {
       body += `The attached Learning Plan details everything we'd work on with ${pr.obj} moving forward.\n\n`;
     }
   } else if(planTopics.length){
     body += `Some of ${pr.poss} key areas to work on include:\n\n`;
-    planTopics.forEach(t=> body += `* ${t}\n`);
+    planTopics.forEach(t=> body += `• ${t}\n`);
     body += `\n`;
   }
 
@@ -2312,7 +2418,7 @@ function generateSiblingRfaEmail(){
     body += buildChildSection(k.dataset, k.extraCharts, k.assessmentsGiven, k.name, k.pr, center);
     if(k.planTopics.length){
       body += `Some of ${k.pr.poss} key areas to work on include:\n\n`;
-      k.planTopics.forEach(t=> body += `* ${t}\n`);
+      k.planTopics.forEach(t=> body += `• ${t}\n`);
       body += `\n`;
     }
   });
@@ -2449,17 +2555,17 @@ document.getElementById('genBtn').addEventListener('click', ()=>{
 
   if(preMode && mastery.length){
     body += `${student} showed mastery of the following topics:\n\n`;
-    mastery.forEach(t=> body += `* ${t}\n`);
+    mastery.forEach(t=> body += `• ${t}\n`);
     body += `\n`;
   }
   if(!preMode && improved.length){
     body += `${student} improved on the following topics:\n\n`;
-    improved.forEach(t=> body += `* ${t}\n`);
+    improved.forEach(t=> body += `• ${t}\n`);
     body += `\n`;
   }
   if(!preMode && newTopics.length){
     body += `${student} has also moved up to a new level, introducing some new topics ${pr.subj} ${pr.be} now being tested on:\n\n`;
-    newTopics.forEach(t=> body += `* ${t}\n`);
+    newTopics.forEach(t=> body += `• ${t}\n`);
     body += `\n`;
   }
   if(extraNotes.length){
@@ -2467,7 +2573,7 @@ document.getElementById('genBtn').addEventListener('click', ()=>{
   }
   if(planTopics.length){
     body += `Based on these results, we've built an updated learning plan. ${pr.subj[0].toUpperCase()+pr.subj.slice(1)} will be focusing on:\n\n`;
-    planTopics.forEach(t=> body += `* ${t}\n`);
+    planTopics.forEach(t=> body += `• ${t}\n`);
     body += `\n`;
   }
   body += `A reassessment is built into the next learning plan, so we'll follow up with another update once that's complete. In the meantime, please don't hesitate to reach out with any questions. Thank you!\n\n`;
@@ -2476,13 +2582,57 @@ document.getElementById('genBtn').addEventListener('click', ()=>{
   document.getElementById('emailOut').value = body;
 });
 
-document.getElementById('copyBtn').addEventListener('click', ()=>{
+/* ---------------------------------------------------------
+   COPY TO CLIPBOARD (as real HTML, so bullet lines paste into
+   Gmail as an actual formatted list instead of literal
+   asterisks/dots). Falls back to plain-text copy on browsers
+   that don't support writing multiple clipboard formats.
+--------------------------------------------------------- */
+function escapeHtml(s){
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+/* Turns the plain-text email body into clean HTML: blank-line-separated
+   blocks become paragraphs, and a block whose lines all start with the
+   bullet character becomes a real <ul><li> list Gmail will render as one. */
+function emailTextToHtml(text){
+  const blocks = text.replace(/\r\n/g,'\n').split(/\n\s*\n/);
+  const html = blocks.map(block=>{
+    const lines = block.split('\n').filter(l=>l.length);
+    if(!lines.length) return '';
+    if(lines.every(l=>/^\s*\u2022\s?/.test(l))){
+      const items = lines.map(l=>`<li>${escapeHtml(l.replace(/^\s*\u2022\s?/,''))}</li>`).join('');
+      return `<ul style="margin:0 0 1em 0;padding-left:20px;">${items}</ul>`;
+    }
+    return `<p style="margin:0 0 1em 0;">${lines.map(escapeHtml).join('<br>')}</p>`;
+  }).filter(Boolean).join('');
+  return `<div>${html}</div>`;
+}
+
+document.getElementById('copyBtn').addEventListener('click', async ()=>{
   const ta = document.getElementById('emailOut');
+  const ok = document.getElementById('copyOk');
+  const showCopied = ()=>{ ok.style.display = 'inline'; setTimeout(()=>ok.style.display='none', 1600); };
+
+  if(navigator.clipboard && window.ClipboardItem){
+    try{
+      const html = emailTextToHtml(ta.value);
+      await navigator.clipboard.write([
+        new ClipboardItem({
+          'text/plain': new Blob([ta.value], {type:'text/plain'}),
+          'text/html': new Blob([html], {type:'text/html'})
+        })
+      ]);
+      showCopied();
+      return;
+    }catch(e){
+      console.error('Rich copy failed, falling back to plain text:', e);
+    }
+  }
+  // Fallback: plain-text-only copy (bullet character still shows, just not as a real <li>)
   ta.select();
   document.execCommand('copy');
-  const ok = document.getElementById('copyOk');
-  ok.style.display = 'inline';
-  setTimeout(()=>ok.style.display='none', 1600);
+  showCopied();
 });
 </script>
 </body>
