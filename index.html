@@ -1018,7 +1018,12 @@ function parseChart(rows){
       chart.studentName = titleMatch[2].trim();
       return;
     }
-    if(/^Checkup/i.test(joined) || /Checkup #\d+ Assessment/i.test(joined)){
+    // The subtitle line right under "Assessment Chart: {Name}" identifies the
+    // assessment - either a bare "Checkup #N" (numbered Level checkups) or a
+    // named "Mathnasium {Name} Checkup Assessment" line (Computation, Algebra
+    // Readiness, HS Fundamental Skills, Numerical Fluency, etc.) - capture
+    // both forms; assessmentLabelFromCheckup() below parses whichever it got.
+    if(/^Checkup/i.test(joined) || /Checkup #\d+ Assessment/i.test(joined) || /^Mathnasium\s+.+\s+Assessment$/i.test(joined)){
       chart.checkup = joined;
       return;
     }
@@ -1396,13 +1401,17 @@ function ordinal(n){
    skills by the end of Nth grade" / "extends Level N into geometry and
    data/statistics for Nth grade", which follows the level number
    predictably enough to generate without needing to parse that (fragile,
-   multi-column) description text out of the PDF itself. */
+   multi-column) description text out of the PDF itself. Level 0 is the
+   exception - there's no "0th grade", it's kindergarten. */
+function gradeLabel(n){
+  return n === 0 ? 'kindergarten' : `${ordinal(n)} grade`;
+}
 function describeAssessmentName(name){
   const base = name.replace(/\s+(A|B|Full)$/i, ''); // ignore the form tag for pattern matching only
   let m = base.match(/^Level (\d+) Extension$/i);
-  if(m) return `${name} (extends Level ${m[1]} into geometry and data/statistics for ${ordinal(+m[1])} grade)`;
+  if(m) return `${name} (extends Level ${m[1]} into geometry and data/statistics for ${gradeLabel(+m[1])})`;
   m = base.match(/^Level (\d+)$/i);
-  if(m) return `${name} (core skills through ${ordinal(+m[1])} grade)`;
+  if(m) return `${name} (core skills through ${gradeLabel(+m[1])})`;
   return name;
 }
 
@@ -1410,10 +1419,21 @@ function describeAssessmentName(name){
    reports do — but they do print "Checkup #N" as a title, which maps
    1:1 onto the same "Level N" naming families use in the RFA/enrollment
    conversation, so we can build the same style of label from it. */
+/* Percentage-bar charts don't carry a "Level N" label the way narrative
+   reports do, but the subtitle line under the chart title does the same job
+   in one of two forms: a bare "Checkup #N" for numbered Level checkups
+   (mapped onto the same "Level N" naming everything else uses), or a named
+   "Mathnasium {Name} Checkup Assessment" line for everything else
+   (Computation, Algebra Readiness, HS Fundamental Skills, etc.) - pull
+   {Name} straight out for those. */
 function assessmentLabelFromCheckup(checkupText){
-  const m = (checkupText||'').match(/(\d+)/);
-  if(!m) return '';
-  return describeAssessmentName(`Level ${m[1]}`);
+  const text = (checkupText||'').trim();
+  if(!text) return '';
+  const numMatch = text.match(/^Checkup\s*#?\s*(\d+)/i);
+  if(numMatch) return describeAssessmentName(`Level ${numMatch[1]}`);
+  const namedMatch = text.match(/^Mathnasium\s+(.+?)\s+(?:Checkup\s+)?Assessment$/i);
+  if(namedMatch) return namedMatch[1].trim();
+  return '';
 }
 
 /* Every grade-level-style assessment (Level N, Computation, HS Fundamentals,
@@ -1422,7 +1442,10 @@ function assessmentLabelFromCheckup(checkupText){
    that trailing tag for parent-facing sentences only; the full label with
    the form tag stays intact in the "Assessments given" field itself. */
 function forParentFacing(label){
-  return (label||'').replace(/\s+(A|B|Full)(?=\s*(\(|$))/i, '').trim();
+  return (label||'')
+    .replace(/\s+(A|B|Full)(?=\s*(\(|$))/i, '')
+    .replace(/\s*\([^)]*\)\s*$/, '') // strip the "(core skills through Nth grade)"-style explanation - useful in staff-facing tables, but reads oddly pasted into a sentence
+    .trim();
 }
 
 function listJoin(arr){
@@ -1532,7 +1555,7 @@ document.getElementById('parseBtn').addEventListener('click', async ()=>{
                        categories: chart.categories.map(c=>({name:c.name, topics:c.topics.map(t=>({name:t.name, prev:null, curr:t.percent}))})),
                        singleChartMode:true};
           }
-          const label = assessmentLabelFromCheckup(chart.checkup);
+          const label = only.assessmentNames[0] || assessmentLabelFromCheckup(chart.checkup);
           merged.assessmentsGiven = label ? [label] : [];
         }
         summary.push(`Main assessment: <strong>${escapeAttr(only.file.name)}</strong> (single snapshot)`);
@@ -1546,7 +1569,7 @@ document.getElementById('parseBtn').addEventListener('click', async ()=>{
           const rowsCurr = await extractRowsFromPDF(currC.file);
           const chartCurr = parseChart(rowsCurr);
           merged = mergeTwoCharts(parseChart(rowsPrev), chartCurr);
-          const label = assessmentLabelFromCheckup(chartCurr.checkup);
+          const label = currC.assessmentNames[0] || assessmentLabelFromCheckup(chartCurr.checkup);
           merged.assessmentsGiven = label ? [label] : [];
         }
         summary.push(`Main assessment: <strong>${escapeAttr(prevC.file.name)}</strong> → <strong>${escapeAttr(currC.file.name)}</strong> (compared)`);
@@ -1587,9 +1610,13 @@ document.getElementById('parseBtn').addEventListener('click', async ()=>{
 
     // group leftovers into additional-assessment cards, by detected label
     const groups = new Map(); // label -> classified[]
+    const unnamedLabels = new Set(); // labels that fell back to the generic placeholder
     leftovers.forEach((c,i)=>{
-      const label = (c.kind==='narrative' && c.assessmentNames[0]) ? c.assessmentNames[0]
-                    : `Additional Assessment ${extraCharts.length + groups.size + 1}`;
+      let label = c.assessmentNames[0];
+      if(!label){
+        label = `Additional Assessment ${extraCharts.length + groups.size + 1}`;
+        unnamedLabels.add(label);
+      }
       if(!groups.has(label)) groups.set(label, []);
       groups.get(label).push(c);
     });
@@ -1599,6 +1626,9 @@ document.getElementById('parseBtn').addEventListener('click', async ()=>{
       if(alreadyExists){
         summary.push(`Skipped: <strong>${escapeAttr(label)}</strong> already has a card below (re-analyzing doesn't duplicate it).`);
         return;
+      }
+      if(unnamedLabels.has(label)){
+        summary.push(`&#9888; Couldn't figure out what to call <strong>${escapeAttr(label)}</strong> &mdash; rename it in the card below so it reads right in the email (currently it would say "On the ${escapeAttr(label)}...").`);
       }
       files.sort(byDate);
       if(orderIsUncertain(files)){
@@ -2203,9 +2233,18 @@ async function parseAnyAssessmentFile(file){
   const chartTopics = [];
   chart.categories.forEach(cat=>cat.topics.forEach(t=>chartTopics.push({name:t.name, value:t.percent})));
   if(chartTopics.length){
+    // Chart PDFs print the assessment name in their subtitle line (either a
+    // bare "Checkup #N" or a named "Mathnasium {Name} Checkup Assessment"
+    // line) - assessmentLabelFromCheckup() parses whichever form parseChart
+    // captured into chart.checkup. Chart filenames don't follow the same
+    // "__"-separated convention narrative report filenames do (and can carry
+    // a "(1)"/"(2)" duplicate-download suffix that looks like a separator),
+    // so a filename guess isn't a safe fallback here the way it is for
+    // narrative reports - content detection is the only source of truth.
+    const checkupLabel = assessmentLabelFromCheckup(chart.checkup);
     return {kind:'chart', file, studentName:chart.studentName, overall:chart.scores[0]||'',
             topics:chartTopics, dateRaw:file.manualDate||chart.dates[0]||'', dateIsManual:!!file.manualDate,
-            assessmentNames:[]};
+            assessmentNames: checkupLabel ? [checkupLabel] : []};
   }
 
   return null;
@@ -2468,8 +2507,16 @@ function generateRfaEmail(){
     body += `We also help with homework when time allows, though our curriculum stays the priority. More detail on how that works is in the attached enrollment documents.\n\n`;
   }
 
-  body += `To get ${student} enrolled, we just need to know ${pr.poss} start date and which commitment length you'd like (Month-to-Month, 6-Month, or 12-Month), which also lets us prorate the first month correctly. `;
-  if(startDate) body += `We could get ${pr.obj} started as soon as ${startDate}. `;
+  const askCommitment = "which commitment length you'd like (Month-to-Month, 6-Month, or 12-Month)";
+  if(commitment && startDate){
+    body += `To get ${student} enrolled on a ${commitment} commitment starting ${startDate}, we just need the enrollment paperwork squared away, which also lets us prorate the first month correctly. `;
+  } else if(commitment){
+    body += `To get ${student} enrolled on a ${commitment} commitment, we just need to know ${pr.poss} start date, which also lets us prorate the first month correctly. `;
+  } else if(startDate){
+    body += `To get ${student} enrolled, we just need to know ${askCommitment}, which also lets us prorate the first month correctly. We could get ${pr.obj} started as soon as ${startDate}. `;
+  } else {
+    body += `To get ${student} enrolled, we just need to know ${pr.poss} start date and ${askCommitment}, which also lets us prorate the first month correctly. `;
+  }
   body += `Our hours and pricing are in the attached Parent Pack for your reference.\n\n`;
 
   if(scheduling){
@@ -2537,8 +2584,16 @@ function generateSiblingRfaEmail(){
     body += `We also help with homework when time allows, though our curriculum stays the priority. More detail on how that works is in the attached enrollment documents.\n\n`;
   }
 
-  body += `To get ${listJoin(names)} enrolled, we just need to know their start date${kids.length>1?'s':''} and which commitment length${kids.length>1?'s':''} you'd like (Month-to-Month, 6-Month, or 12-Month) for each, which also lets us prorate the first month correctly. `;
-  if(startDate) body += `We could get them started as soon as ${startDate}. `;
+  const askCommitment = `which commitment length${kids.length>1?'s':''} you'd like (Month-to-Month, 6-Month, or 12-Month)${kids.length>1?' for each':''}`;
+  if(commitment && startDate){
+    body += `To get ${listJoin(names)} enrolled on a ${commitment} commitment${kids.length>1?' each':''} starting ${startDate}, we just need the enrollment paperwork squared away, which also lets us prorate the first month correctly. `;
+  } else if(commitment){
+    body += `To get ${listJoin(names)} enrolled on a ${commitment} commitment${kids.length>1?' each':''}, we just need to know their start date${kids.length>1?'s':''}, which also lets us prorate the first month correctly. `;
+  } else if(startDate){
+    body += `To get ${listJoin(names)} enrolled, we just need to know ${askCommitment}, which also lets us prorate the first month correctly. We could get them started as soon as ${startDate}. `;
+  } else {
+    body += `To get ${listJoin(names)} enrolled, we just need to know their start date${kids.length>1?'s':''} and ${askCommitment}, which also lets us prorate the first month correctly. `;
+  }
   body += `Our hours and pricing are in the attached Parent Pack for your reference.\n\n`;
 
   if(scheduling){
