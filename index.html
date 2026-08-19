@@ -2842,7 +2842,7 @@ document.getElementById('genBtn').addEventListener('click', ()=>{
   const assessmentPhrase = assessmentsGiven.length
     ? (assessmentsGiven.length===1 ? `a ${assessmentsGiven[0]} assessment` : `the ${listJoin(assessmentsGiven)} assessments`)
     : 'an assessment';
-  body += `This is ${staff} with Mathnasium. ${student} recently completed ${assessmentPhrase}, and I wanted to share an update on ${pr.poss} progress. `;
+  body += `This is ${staff} with Mathnasium. ${student} recently completed ${assessmentPhrase}, and I wanted to share an update on ${pr.poss} progress! `;
   if(!preMode && prevPlan){
     body += `${pr.subj[0].toUpperCase()+pr.subj.slice(1)} had been working on ${pr.poss} ${prevPlan} lesson plan since the last update. `;
   }
@@ -2859,11 +2859,12 @@ document.getElementById('genBtn').addEventListener('click', ()=>{
     body += extraNotes.join('\n\n') + '\n\n';
   }
   if(planTopics.length){
-    body += `Based on these results, we've built an updated learning plan. ${pr.subj[0].toUpperCase()+pr.subj.slice(1)} will be focusing on:\n\n`;
+    body += `Based on these results, we've built an updated Learning Plan. ${pr.subj[0].toUpperCase()+pr.subj.slice(1)} will begin their Learning Plan by focusing on the following skills:\n\n`;
     planTopics.forEach(t=> body += `• ${t}\n`);
     body += `\n`;
   }
-  body += `A reassessment is built into the next learning plan, so we'll follow up with another update once that's complete. In the meantime, please don't hesitate to reach out with any questions. Thank you!\n\n`;
+  /* i wanna put an if statement to filter the last line by center so that way MEV would be able to use this - PH */
+  body += `A reassessment is built into the next Learning Plan, so we'll follow up with another update once that's complete. In the meantime, please don't hesitate to reach out with any questions. Thank you!\n\n`;
   body += `Best,\n${staff}\n${CENTER_INFO[document.getElementById('emailCenter').value].name}`;
 
   document.getElementById('emailOut').value = body;
