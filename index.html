@@ -428,7 +428,7 @@
         <li>Upload all assessment reports.</li>
         <li>Check the student details.</li>
         <li>Review the analyzed scores and adjust as necessary.</li>
-        <li>Fill in the new learning plan topics by hand.</li>
+        <li>Fill in the new learning plan topics (auto-filled if you drop a Learning Plan Report PDF in with the rest, or type your own).</li>
         <li>Generate the email.</li>
       </ul>
     </div>
@@ -597,10 +597,10 @@
     <div class="step-head">
       <div class="step-num">4</div>
       <h2>New learning plan topics</h2>
-      <div class="hint">Pulled by hand from Radius / the Learning Plan report</div>
+      <div class="hint">Auto-filled from a Learning Plan Report dropped in Step 1, or type your own</div>
     </div>
     <div class="step-body">
-      <p class="desc">One topic per line. These go in the "will be working on these topics" section of the email.</p>
+      <p class="desc">One topic per line. These go in the "will be working on these topics" section of the email. Drop a Learning Plan Report PDF in Step 1 to fill this in automatically &mdash; Risk-Free Assessment mode pulls Initial Topic items, Progress Update mode pulls In-Progress and Initial Topic items (Mastered topics are left out either way).</p>
       <textarea class="plan" id="planTopics" placeholder="Exponents - Whole Number and Fraction Bases
 Problem Solving - Proportional Reasoning
 Integer Subtraction/Multiplication and Division with Two Numbers"></textarea>
@@ -983,6 +983,130 @@ async function extractRowsFromPDF(file){
   return allRows; // array of rows; each row is an array of {text,x,y}
 }
 
+/* ---------------------------------------------------------
+   LEARNING PLAN REPORT PARSER
+   Unlike every other parser in this file, a Learning Plan Report doesn't
+   print each topic's status (Initial Topic / In-Progress / Mastered) as
+   text - it's a small colored icon drawn next to the topic name, with no
+   text equivalent anywhere in the PDF's content stream. So this can't reuse
+   extractRowsFromPDF's pure-text approach: it renders each page to an
+   off-screen canvas and reads the actual pixel colors next to each topic
+   line, matched against the specific RGB values Radius uses for each
+   status (confirmed directly against real exported reports, not guessed):
+     Initial Topic / New  -> blue open circle   (~75,143,203)
+     In-Progress          -> grey filled circle (~184,184,184)
+     Mastered              -> green filled circle (~87,203,75)
+   Re-Added and School Topic are intentionally not distinguished - Re-Added
+   shares In-Progress's grey base circle (just a white inner mark instead of
+   a dark one) and will simply be bucketed as In-Progress, which is a
+   reasonable default until there's a reason to special-case it. School
+   Topic is a separate overlay icon in its own column and doesn't affect
+   this at all.
+--------------------------------------------------------- */
+const LP_ICON_SIGNATURES = {
+  initialTopic: [75, 143, 203],
+  inProgress:   [184, 184, 184],
+  mastered:     [87, 203, 75]
+};
+const LP_LEGEND_RE = /^(Re-Added|In-Progress|Mastered|New|Initial Topic|School Topic)(\s+(Re-Added|In-Progress|Mastered|New|Initial Topic|School Topic))*$/i;
+
+function lpColorDist(a, b){
+  return Math.sqrt((a[0]-b[0])**2 + (a[1]-b[1])**2 + (a[2]-b[2])**2);
+}
+function lpClassifyColor(rgb){
+  let best = null, bestD = Infinity;
+  for(const [name, sig] of Object.entries(LP_ICON_SIGNATURES)){
+    const d = lpColorDist(rgb, sig);
+    if(d < bestD){ bestD = d; best = name; }
+  }
+  return {best, bestD};
+}
+
+async function parseLearningPlanReport(file){
+  const buf = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({data:buf}).promise;
+
+  const statusTopics = {initialTopic:[], inProgress:[], mastered:[]};
+  let studentName = '';
+  let pastIntro = false;
+  let done = false;
+
+  for(let pageNum=1; pageNum<=pdf.numPages && !done; pageNum++){
+    const page = await pdf.getPage(pageNum);
+    const scale = 3; // higher scale = more pixels to vote with, more reliable classification
+    const viewport = page.getViewport({scale});
+    const canvas = document.createElement('canvas');
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    const ctx = canvas.getContext('2d');
+    await page.render({canvasContext: ctx, viewport}).promise;
+
+    const textContent = await page.getTextContent();
+    const items = textContent.items.map(it => ({
+      text: it.str, x: it.transform[4], y: it.transform[5]
+    })).filter(it => it.text.trim());
+
+    items.sort((a,b)=> b.y - a.y || a.x - b.x);
+    const TOL = 10;
+    let rows = [], current = [], currentY = null;
+    items.forEach(it=>{
+      if(currentY===null || Math.abs(it.y-currentY) <= TOL){
+        current.push(it);
+        currentY = current.reduce((s,i)=>s+i.y,0)/current.length;
+      } else {
+        rows.push(current);
+        current = [it];
+        currentY = it.y;
+      }
+    });
+    if(current.length) rows.push(current);
+    rows.forEach(r=>r.sort((a,b)=>a.x-b.x));
+
+    for(const row of rows){
+      const text = row.map(i=>i.text).join(' ').replace(/\s+/g,' ').trim();
+      if(!text) continue;
+
+      if(pageNum===1 && !studentName && /^Learning Plan Report$/i.test(text)) continue;
+      if(pageNum===1 && !studentName && !/^Mathnasium/i.test(text)){ studentName = text; continue; }
+
+      if(/^This is your child's Learning Plan/i.test(text)){ pastIntro = true; continue; }
+      if(!pastIntro) continue;
+
+      // footer or the Supplemental Topic / Workout Book blurb - nothing after
+      // this point is a real skill topic, stop reading entirely
+      if(/^(Center Director|Mathnasium of [A-Za-z ]+\||www\.|\(\d{3}\)\s*\d{3}-\d{4})/i.test(text)){ done = true; break; }
+      if(/^Supplemental Topic$/i.test(text)){ done = true; break; }
+      if(LP_LEGEND_RE.test(text)) continue; // the icon legend line itself, not a topic
+
+      const rowY = row.reduce((s,i)=>s+i.y,0)/row.length;
+      const [vx, vy] = viewport.convertToViewportPoint(561, rowY); // 561 = icon column midpoint, pdf-space
+      const sampleSize = 22 * scale; // covers the ~18pt icon fully, including a hollow icon's thin ring
+      const px = Math.round(vx - sampleSize/2);
+      const py = Math.round(vy - sampleSize/2);
+      if(px < 0 || py < 0 || px+sampleSize > canvas.width || py+sampleSize > canvas.height) continue;
+
+      const imgData = ctx.getImageData(px, py, sampleSize, sampleSize).data;
+      // vote per-pixel rather than averaging the box - a filled icon's solid
+      // color would survive an average fine, but a hollow icon (Initial
+      // Topic's hollow circle) is mostly white in the middle, and averaging
+      // that in would wash out the thin colored ring into an unrecognizable
+      // pale blend
+      const votes = {initialTopic:0, inProgress:0, mastered:0};
+      for(let i=0;i<imgData.length;i+=4){
+        const r=imgData[i], g=imgData[i+1], b=imgData[i+2], a=imgData[i+3];
+        if(a<10) continue;
+        if(r>235 && g>235 && b>235) continue; // white background/icon interior
+        if(r<40 && g<40 && b<40) continue; // dark topic-name text bleeding into the sample box
+        const {best, bestD} = lpClassifyColor([r,g,b]);
+        if(bestD < 30) votes[best]++;
+      }
+      const [winner, count] = Object.entries(votes).sort((a,b)=>b[1]-a[1])[0];
+      if(count >= 8) statusTopics[winner].push(text);
+    }
+  }
+  return {studentName, statusTopics};
+}
+
 // Skill-number list column tops out well under this x; topic names / percents start after it.
 const NAME_COL_X = 115;
 
@@ -1123,10 +1247,29 @@ function parseNarrativeReport(rows){
     }
   }
   let dateStr = '';
-  for(const r of rows){
-    const l = joinRow(r);
-    const m = l.match(/[A-Za-z]+ \d{1,2},\s*\d{4}/) || l.match(/\d{1,2}\/\d{1,2}\/\d{4}/);
-    if(m){ dateStr = m[0]; break; }
+  // Mastery Reports print the export date in the header (just "today,"
+  // useless for telling old vs. new apart) AND the real "Recent Assessment"
+  // date further down in its own labeled box - grab that one specifically,
+  // since it's the date this score was actually earned. Plain Assessment
+  // Reports don't have that distinction, so they fall through to the
+  // first-date-on-the-page behavior below (which IS the real test date
+  // for that format).
+  if(isMastery){
+    const idx = rows.findIndex(r => /^Recent Assessment$/i.test(joinRow(r)));
+    if(idx >= 0){
+      for(let i=idx+1; i<Math.min(idx+6, rows.length); i++){
+        const l = joinRow(rows[i]);
+        const m = l.match(/[A-Za-z]+ \d{1,2},\s*\d{4}/) || l.match(/\d{1,2}\/\d{1,2}\/\d{4}/);
+        if(m){ dateStr = m[0]; break; }
+      }
+    }
+  }
+  if(!dateStr){
+    for(const r of rows){
+      const l = joinRow(r);
+      const m = l.match(/[A-Za-z]+ \d{1,2},\s*\d{4}/) || l.match(/\d{1,2}\/\d{1,2}\/\d{4}/);
+      if(m){ dateStr = m[0]; break; }
+    }
   }
 
   const categories = []; // {name, num, den, mastered:[], inProgress:[]}
@@ -1515,6 +1658,11 @@ document.getElementById('parseBtn').addEventListener('click', async ()=>{
       return;
     }
 
+    // Learning Plan Reports don't belong in the assessment table at all - pull
+    // them out here and use them to auto-fill Step 4 instead, below.
+    const lpReportFiles = classified.filter(c => c.kind === 'learningPlan');
+    const assessmentFiles = classified.filter(c => c.kind !== 'learningPlan');
+
     const isMainNarrative = c => c.kind==='narrative' && c.assessmentNames.some(n=>/^(Level \d|Computation|High School|HS Fundamental|Algebra Readiness)/i.test(n));
     const byDate = (a,b) => parseFlexDate(a.dateRaw) - parseFlexDate(b.dateRaw);
     // If 2+ files being compared as prev/curr share the same date (or no date) and none
@@ -1523,9 +1671,9 @@ document.getElementById('parseBtn').addEventListener('click', async ()=>{
     const orderIsUncertain = files => files.length > 1 && !files.some(f=>f.dateIsManual) &&
       files.every(f=>parseFlexDate(f.dateRaw).getTime() === parseFlexDate(files[0].dateRaw).getTime());
 
-    const narrativeMain = classified.filter(isMainNarrative).sort(byDate);
-    const chartFiles = classified.filter(c=>c.kind==='chart').sort(byDate);
-    const narrativeExtra = classified.filter(c=>c.kind==='narrative' && !isMainNarrative(c)).sort(byDate);
+    const narrativeMain = assessmentFiles.filter(isMainNarrative).sort(byDate);
+    const chartFiles = assessmentFiles.filter(c=>c.kind==='chart').sort(byDate);
+    const narrativeExtra = assessmentFiles.filter(c=>c.kind==='narrative' && !isMainNarrative(c)).sort(byDate);
 
     let mainPool = [], mainKind = null;
     if(narrativeMain.length){ mainPool = narrativeMain; mainKind = 'narrative'; }
@@ -1598,13 +1746,13 @@ document.getElementById('parseBtn').addEventListener('click', async ()=>{
         summary.push(`Split out: <strong>${escapeAttr(label)}</strong> (${nfCat.num}/${nfCat.den}) from the main report into Additional assessments`);
       });
 
-      leftovers = classified.filter(c=>!mainUsed.includes(c));
+      leftovers = assessmentFiles.filter(c=>!mainUsed.includes(c));
       if(mainSkipped.length){
         summary.push(`(${mainSkipped.length} extra main-format file(s) fell in between the dates used and were set aside, see below)`);
       }
     } else {
       // nothing looked like a "main" assessment — leave Step 1 empty, everything becomes extras
-      leftovers = classified.slice();
+      leftovers = assessmentFiles.slice();
       summary.push(`No main grade-level assessment detected among these files, so everything below went into Additional assessments instead.`);
     }
 
@@ -1652,6 +1800,37 @@ document.getElementById('parseBtn').addEventListener('click', async ()=>{
 
     if(unreadable.length){
       summary.push(`Could not auto-read: ${unreadable.map(escapeAttr).join(', ')}. This usually means the raw checkbox-style checkup PDF; add those by hand if needed.`);
+    }
+
+    // Learning Plan Report(s) -> Step 4. RFA pulls Initial Topic only (the
+    // first concepts assigned on a brand-new plan); Progress Update pulls
+    // Initial Topic + In-Progress (everything that isn't done yet). Mastered
+    // topics never get pulled in either mode - they're finished, not "next."
+    if(lpReportFiles.length){
+      const merged = {initialTopic:[], inProgress:[], mastered:[]};
+      lpReportFiles.forEach(f=>{
+        merged.initialTopic.push(...f.statusTopics.initialTopic);
+        merged.inProgress.push(...f.statusTopics.inProgress);
+        merged.mastered.push(...f.statusTopics.mastered);
+      });
+      const isRfa = document.querySelector('input[name="emailMode"]:checked').value === 'rfa';
+      const target = isRfa
+        ? [...new Set(merged.initialTopic)]
+        : [...new Set([...merged.inProgress, ...merged.initialTopic])];
+
+      const planEl = document.getElementById('planTopics');
+      if(!target.length && merged.mastered.length){
+        summary.push(`&#9888; Every topic on the Learning Plan Report is already marked Mastered &mdash; this student needs a new assessment and a new plan, not a pull from this report. Step 4 was left as-is.`);
+      } else if(!target.length){
+        summary.push(`Learning Plan Report read, but no ${isRfa?'Initial Topic':'In-Progress or Initial Topic'} items were found on it to pull into Step 4.`);
+      } else if(planEl.value.trim()){
+        summary.push(`Learning Plan Report found ${target.length} topic(s) to pull into Step 4, but left it alone since it already has content &mdash; clear it first if you want the auto-fill.`);
+      } else {
+        planEl.value = target.join('\n');
+        summary.push(`Step 4 filled in from the Learning Plan Report: ${target.length} ${isRfa?'Initial Topic':'In-Progress / Initial Topic'} item(s).`);
+      }
+      const lpName = lpReportFiles.map(f=>f.studentName).find(Boolean);
+      if(lpName && !document.getElementById('studentName').value) document.getElementById('studentName').value = firstNameOf(lpName);
     }
 
     revealSteps();
@@ -2212,6 +2391,18 @@ function renderExtra(){
 /* Try the percentage-bar chart layout first, then the narrative report layout. */
 async function parseAnyAssessmentFile(file){
   const rows = await extractRowsFromPDF(file);
+
+  // Learning Plan Reports don't fit the narrative/chart parsers at all - their
+  // status per topic is a colored icon with no text equivalent anywhere in the
+  // PDF, so they need the pixel-based reader instead. Route them off before
+  // attempting anything else; otherwise they just silently fail both parsers
+  // and get marked unreadable.
+  const isLearningPlan = rows.some(r => /^Learning Plan Report$/i.test(r.map(i=>i.text).join(' ').trim()));
+  if(isLearningPlan){
+    const lp = await parseLearningPlanReport(file);
+    return {kind:'learningPlan', file, studentName:lp.studentName, statusTopics:lp.statusTopics,
+            dateRaw:file.manualDate||'', dateIsManual:!!file.manualDate, assessmentNames:[]};
+  }
 
   // Check the narrative report format first — it's gated on an explicit "Assessment
   // Report"/"Mastery Report" title match, which is a far more reliable signal than
