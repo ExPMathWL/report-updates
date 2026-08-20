@@ -2389,7 +2389,8 @@ const CENTER_INFO = {
     phone: '(503) 305-8738',
     address: '21900 Willamette Dr, West Linn, Oregon 97068',
     email: 'westlinn@mathnasium.com',
-    scoreVoice: 'clinical' // "indicates gaps but solid fundamentals" style
+    scoreVoice: 'clinical', // "indicates gaps but solid fundamentals" style
+    progressTrigger: 'assessment' // WL's cadence: reassess every N concepts, independent of LP completion
   },
   MEV: {
     name: 'Mathnasium of East Vancouver',
@@ -2397,16 +2398,17 @@ const CENTER_INFO = {
     phone: '(360) 449-2878',
     address: '16020 SE Mill Plain Blvd #117, Vancouver, Washington 98684',
     email: 'eastvancouver@mathnasium.com',
-    scoreVoice: 'warm' // "phenomenal!" style
+    scoreVoice: 'warm', // "phenomenal!" style
+    progressTrigger: 'learningPlan' // MEV's cadence: student finishes the current Learning Plan, then gets reassessed
   }
 };
 // standard is 40-70% on an initial assessment, regardless of center
 const STANDARD_SCORE_RANGE = '40-70%';
 
 function pronounSet(p){
-  if(p==='she') return {subj:'she',obj:'her',poss:'her',be:'is'};
-  if(p==='he') return {subj:'he',obj:'him',poss:'his',be:'is'};
-  return {subj:'they',obj:'them',poss:'their',be:'are'};
+  if(p==='she') return {subj:'she',obj:'her',poss:'her',be:'is',has:'has'};
+  if(p==='he') return {subj:'he',obj:'him',poss:'his',be:'is',has:'has'};
+  return {subj:'they',obj:'them',poss:'their',be:'are',has:'have'};
 }
 
 /* Builds the assessment-walkthrough + mastery list for one child, from raw
@@ -2416,15 +2418,6 @@ function pronounSet(p){
    the DOM at a time). */
 function buildChildSection(childDataset, childExtraCharts, assessmentsGivenStr, name, pr, center){
   let text = '';
-
-  childExtraCharts.forEach(c=>{
-    if(!c.label.trim() || !c.score.trim()) return;
-    const blurb = findBlurb(c.label);
-    let line = `We also had ${name} work through the ${forParentFacing(c.label.trim())} assessment`;
-    line += blurb ? `. ${blurb}` : '.';
-    line += ` ${pr.subj[0].toUpperCase()+pr.subj.slice(1)} scored ${fracLabelToPct(c.score.trim())} overall.`;
-    text += `${line}\n\n`;
-  });
 
   const topAssessments = childDataset.topAssessments;
   if(topAssessments && topAssessments.length){
@@ -2449,6 +2442,17 @@ function buildChildSection(childDataset, childExtraCharts, assessmentsGivenStr, 
     text += `\n\nWe aim for students to score somewhere around ${STANDARD_SCORE_RANGE} on an initial assessment, enough to show real prior knowledge while still leaving clear room to grow. ${name} scored ${score || '[score]'} overall`;
     text += center.scoreVoice === 'warm' ? `, which is a great starting point!\n\n` : `, indicating some gaps to close but a solid enough foundation to start building on right away.\n\n`;
   }
+
+  // Extra assessments are framed as "also" - so the main assessment above
+  // has to be mentioned first, or "also" has nothing to refer back to.
+  childExtraCharts.forEach(c=>{
+    if(!c.label.trim() || !c.score.trim()) return;
+    const blurb = findBlurb(c.label);
+    let line = `We also had ${name} work through the ${forParentFacing(c.label.trim())} assessment`;
+    line += blurb ? `. ${blurb}` : '.';
+    line += ` ${pr.subj[0].toUpperCase()+pr.subj.slice(1)} scored ${fracLabelToPct(c.score.trim())} overall.`;
+    text += `${line}\n\n`;
+  });
 
   const mastery = [];
   childDataset.categories.forEach(cat=>{
@@ -2701,7 +2705,7 @@ function buildProgressChildSection(childDataset, childExtraCharts, childMeta, na
 
   const planTopics = (childMeta.planTopics||'').split('\n').map(s=>s.trim()).filter(Boolean);
   if(planTopics.length){
-    text += `Based on these results, we've built an updated learning plan. ${pr.subj[0].toUpperCase()+pr.subj.slice(1)} will be focusing on:\n\n`;
+    text += `Based on these results, we've built an updated Learning Plan. ${pr.subj[0].toUpperCase()+pr.subj.slice(1)} will begin their Learning Plan by focusing on the following skills:\n\n`;
     planTopics.forEach(t=> text += `\u2022 ${t}\n`);
     text += `\n`;
   }
@@ -2733,14 +2737,16 @@ function generateSiblingProgressEmail(){
   const names = kids.map(k=>k.name);
 
   let body = `Hi ${parent}!\n\n`;
-  body += `This is ${staff} with Mathnasium. ${listJoin(names)} recently completed a progress check, and I wanted to update you on their progress.\n\n`;
+  body += `This is ${staff} with Mathnasium. ${listJoin(names)} recently completed a progress check, and I wanted to update you on their progress!\n\n`;
 
   kids.forEach(k=>{
     body += `${k.name}'s Progress Check\n\n`;
     body += buildProgressChildSection(k.dataset, k.extraCharts, k.meta, k.name, k.pr, center);
   });
 
-  body += `Skill-by-skill breakdowns for each of them are attached to this email. A reassessment is built into each of their next learning plans, so we'll follow up with another update once those are complete. If you have any questions at all, please don't hesitate to reach out. Thank you!\n\n`;
+  body += center.progressTrigger === 'learningPlan'
+    ? `Skill-by-skill breakdowns for each of them are attached to this email. We've built each of their next Learning Plans based on these results, so we'll follow up with another update once those are complete. If you have any questions at all, please don't hesitate to reach out. Thank you!\n\n`
+    : `Skill-by-skill breakdowns for each of them are attached to this email. A reassessment is built into each of their next Learning Plans, so we'll follow up with another update once those are complete. If you have any questions at all, please don't hesitate to reach out. Thank you!\n\n`;
   body += `Best,\n${staff}\n${center.name}`;
 
   return body;
@@ -2783,6 +2789,7 @@ document.getElementById('genBtn').addEventListener('click', ()=>{
   const parent = document.getElementById('parentName').value.trim() || 'there';
   const staff = document.getElementById('staffName').value.trim() || '[Your name]';
   const pr = pronounSet(document.getElementById('pronoun').value);
+  const center = CENTER_INFO[document.getElementById('emailCenter').value];
   const prevPlan = document.getElementById('prevPlan').value.trim();
   const currScoreRaw = dataset.currScore || document.getElementById('currScore').value.trim();
   const prevScoreRaw = dataset.prevScore || document.getElementById('prevScore').value.trim();
@@ -2831,7 +2838,7 @@ document.getElementById('genBtn').addEventListener('click', ()=>{
       }
       line += '.';
       if(mentioned.length){
-        line += ` Showed mastery in: ${listJoin(mentioned)}.`;
+        line += ` ${pr.subj[0].toUpperCase()+pr.subj.slice(1)} showed mastery in: ${listJoin(mentioned)}.`;
       }
       return line;
     })
@@ -2842,7 +2849,9 @@ document.getElementById('genBtn').addEventListener('click', ()=>{
   const assessmentPhrase = assessmentsGiven.length
     ? (assessmentsGiven.length===1 ? `a ${assessmentsGiven[0]} assessment` : `the ${listJoin(assessmentsGiven)} assessments`)
     : 'an assessment';
-  body += `This is ${staff} with Mathnasium. ${student} recently completed ${assessmentPhrase}, and I wanted to share an update on ${pr.poss} progress! `;
+  body += center.progressTrigger === 'learningPlan'
+    ? `This is ${staff} with Mathnasium. ${student} recently completed ${pr.poss} Learning Plan, so it was time for a reassessment, and I wanted to share an update on ${pr.poss} progress! `
+    : `This is ${staff} with Mathnasium. ${student} recently completed ${assessmentPhrase}, and I wanted to share an update on ${pr.poss} progress! `;
   if(!preMode && prevPlan){
     body += `${pr.subj[0].toUpperCase()+pr.subj.slice(1)} had been working on ${pr.poss} ${prevPlan} lesson plan since the last update. `;
   }
@@ -2863,9 +2872,10 @@ document.getElementById('genBtn').addEventListener('click', ()=>{
     planTopics.forEach(t=> body += `• ${t}\n`);
     body += `\n`;
   }
-  /* i wanna put an if statement to filter the last line by center so that way MEV would be able to use this - PH */
-  body += `A reassessment is built into the next Learning Plan, so we'll follow up with another update once that's complete. In the meantime, please don't hesitate to reach out with any questions. Thank you!\n\n`;
-  body += `Best,\n${staff}\n${CENTER_INFO[document.getElementById('emailCenter').value].name}`;
+  body += center.progressTrigger === 'learningPlan'
+    ? `We've built ${pr.poss} next Learning Plan based on these results, so we'll follow up with another update once ${pr.subj} ${pr.has} completed it. In the meantime, please don't hesitate to reach out with any questions. Thank you!\n\n`
+    : `A reassessment is built into the next Learning Plan, so we'll follow up with another update once that's complete. In the meantime, please don't hesitate to reach out with any questions. Thank you!\n\n`;
+  body += `Best,\n${staff}\n${center.name}`;
 
   document.getElementById('emailOut').value = body;
 });
