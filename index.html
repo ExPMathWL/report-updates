@@ -1249,18 +1249,24 @@ function parseNarrativeReport(rows){
   let dateStr = '';
   // Mastery Reports print the export date in the header (just "today,"
   // useless for telling old vs. new apart) AND the real "Recent Assessment"
-  // date further down in its own labeled box - grab that one specifically,
-  // since it's the date this score was actually earned. Plain Assessment
-  // Reports don't have that distinction, so they fall through to the
-  // first-date-on-the-page behavior below (which IS the real test date
-  // for that format).
+  // date further down in its own labeled score box - grab that one
+  // specifically, since it's the date this score was actually earned.
+  // Two things about the real layout that aren't obvious from the text alone:
+  // the intro paragraph also says "Recent Assessment" in prose ("...comparing
+  // your child's Initial Assessment and Recent Assessment...") before the
+  // real score box ever appears, so matching on the phrase alone grabs the
+  // wrong row - anchor on it sitting next to a fraction score instead. And
+  // the three score boxes (Initial/Recent/Improvement) render side by side,
+  // so text extraction merges them into one wide row, with both dates
+  // similarly merged onto one row below ("April 04, 2026 August 12, 2026") -
+  // take the LAST date match there, since Recent is always the right-hand box.
   if(isMastery){
-    const idx = rows.findIndex(r => /^Recent Assessment$/i.test(joinRow(r)));
+    const idx = rows.findIndex(r => /Recent Assessment\s+\d+\s*\/\s*\d+/i.test(joinRow(r)));
     if(idx >= 0){
-      for(let i=idx+1; i<Math.min(idx+6, rows.length); i++){
+      for(let i=idx; i<Math.min(idx+6, rows.length); i++){
         const l = joinRow(rows[i]);
-        const m = l.match(/[A-Za-z]+ \d{1,2},\s*\d{4}/) || l.match(/\d{1,2}\/\d{1,2}\/\d{4}/);
-        if(m){ dateStr = m[0]; break; }
+        const matches = l.match(/[A-Za-z]+ \d{1,2},\s*\d{4}/g) || l.match(/\d{1,2}\/\d{1,2}\/\d{4}/g);
+        if(matches && matches.length){ dateStr = matches[matches.length-1]; break; }
       }
     }
   }
