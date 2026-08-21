@@ -1620,7 +1620,17 @@ function guessAssessmentNamesFromFilename(filename){
   s = s.replace(/_{1,2}\d{1,2}_\d{1,2}_\d{4}_\d{1,2}_\d{1,2}$/, '');
   if(!s) return [];
 
-  const anchorRe = /(Numerical_Fluency|Level_\d+|Computation|High_School|HS_Fundamental|Algebra_Readiness)/g;
+  // Assessment name anchors — used to detect what an assessment is CALLED,
+  // regardless of whether it turns out to be a "main" sequential assessment
+  // or an add-on (that split happens separately in isMainNarrative below).
+  // Order matters: more specific tokens (e.g. "Algebra_Readiness_Extension")
+  // must come before the shorter tokens they contain ("Algebra_Readiness"),
+  // or the shorter one would win and silently swallow the "_Extension" part.
+  // Everything past "Level_\d+" and "Computation" is inferred from the
+  // Assessment Selection Guide's official naming, not confirmed against a
+  // real Radius export yet (unlike Level/Computation, which are verified) -
+  // worth double-checking the first time one of these actually comes through.
+  const anchorRe = /(Great_Foundations|Numerical_Fluency|Level_\d+|Computation|Algebra_Readiness_Extension|Algebra_Readiness|Algebra_1|Algebra_2|Geometry_Readiness|Geometry_w(?:ith)?_Proofs|Geometry|HS_Fundamental|High_School_Fundamental|HMM_Fundamental|HMM_Trigonometry|HMM_Linear|HMM_Quadratic|HMM_Advanced_(?:I|II|1|2)|Trigonometry|Precalculus|Integrated_1|Integrated_2|SAT_Basic|SAT_Advanced|Extension_Assessment_\d+|Extension_Checkup_Algebra_Readiness)/g;
   const starts = [];
   let m;
   while((m = anchorRe.exec(s))){ starts.push(m.index); }
@@ -1669,7 +1679,16 @@ document.getElementById('parseBtn').addEventListener('click', async ()=>{
     const lpReportFiles = classified.filter(c => c.kind === 'learningPlan');
     const assessmentFiles = classified.filter(c => c.kind !== 'learningPlan');
 
-    const isMainNarrative = c => c.kind==='narrative' && c.assessmentNames.some(n=>/^(Level \d|Computation|High School|HS Fundamental|Algebra Readiness)/i.test(n));
+    // Which detected names are eligible to compete for the "main" comparison
+    // slot vs. always landing in Additional Assessments. Computation, HS
+    // Fundamental Skills, Numerical Fluency, and Extension assessments are
+    // add-ons by design (per the Assessment Selection Guide and confirmed
+    // usage) - they never get to be "the" assessment, even if that's the
+    // only file present for a student. Extensions can occasionally function
+    // as a main assessment in rare cases, but that's rare enough that it's
+    // not worth auto-detecting; staff can move a card manually if that
+    // specific case comes up.
+    const isMainNarrative = c => c.kind==='narrative' && c.assessmentNames.some(n=>/^(Level \d|Great Foundations|Algebra Readiness(?! Extension)|Algebra 1|Algebra 2|Geometry Readiness|Geometry(?! Readiness)|Geometry w(?:ith)? Proofs|HMM Fundamental|HMM Trigonometry|HMM Linear|HMM Quadratic|HMM Advanced|Trigonometry|Precalculus|Integrated 1|Integrated 2|SAT Basic|SAT Advanced)/i.test(n));
     const byDate = (a,b) => parseFlexDate(a.dateRaw) - parseFlexDate(b.dateRaw);
     // If 2+ files being compared as prev/curr share the same date (or no date) and none
     // of them had a date typed in by hand, we genuinely can't tell which is older - flag
@@ -1718,13 +1737,17 @@ document.getElementById('parseBtn').addEventListener('click', async ()=>{
         if(mainKind === 'narrative'){
           merged = mergeTwoNarrativeReports(prevC.narrative, currC.narrative);
           merged.assessmentsGiven = currC.assessmentNames;
+          merged.prevAssessmentsGiven = prevC.assessmentNames;
         } else {
           const rowsPrev = await extractRowsFromPDF(prevC.file);
           const rowsCurr = await extractRowsFromPDF(currC.file);
+          const chartPrev = parseChart(rowsPrev);
           const chartCurr = parseChart(rowsCurr);
-          merged = mergeTwoCharts(parseChart(rowsPrev), chartCurr);
+          merged = mergeTwoCharts(chartPrev, chartCurr);
           const label = currC.assessmentNames[0] || assessmentLabelFromCheckup(chartCurr.checkup);
           merged.assessmentsGiven = label ? [label] : [];
+          const prevLabel = prevC.assessmentNames[0] || assessmentLabelFromCheckup(chartPrev.checkup);
+          merged.prevAssessmentsGiven = prevLabel ? [prevLabel] : [];
         }
         summary.push(`Main assessment: <strong>${escapeAttr(prevC.file.name)}</strong> → <strong>${escapeAttr(currC.file.name)}</strong> (compared)`);
         if(orderIsUncertain(mainUsed)){
@@ -2630,7 +2653,7 @@ function buildChildSection(childDataset, childExtraCharts, assessmentsGivenStr, 
     text += `We aim for students to score somewhere around ${STANDARD_SCORE_RANGE} on an initial assessment, enough to show real prior knowledge while still leaving clear room to grow.\n\n`;
   } else {
     const assessmentsGiven = (assessmentsGivenStr||'').split(',').map(s=>s.trim()).filter(Boolean);
-    const mainLabel = assessmentsGiven.find(n => /^Level \d|^Checkup|^Computation|^High School|^HS Fundamental|^Algebra Readiness/i.test(n)) || assessmentsGiven[0] || '';
+    const mainLabel = assessmentsGiven.find(n => /^(Level \d|Checkup|Great Foundations|Algebra Readiness(?! Extension)|Algebra 1|Algebra 2|Geometry Readiness|Geometry(?! Readiness)|Geometry w(?:ith)? Proofs|HMM Fundamental|HMM Trigonometry|HMM Linear|HMM Quadratic|HMM Advanced|Trigonometry|Precalculus|Integrated 1|Integrated 2|SAT Basic|SAT Advanced)/i.test(n)) || assessmentsGiven[0] || '';
     const mainLabelClean = forParentFacing(mainLabel);
     const mainBlurb = mainLabel ? findBlurb(mainLabel) : '';
     const score = fracLabelToPct(childDataset.currScore || '');
@@ -3018,6 +3041,17 @@ document.getElementById('genBtn').addEventListener('click', ()=>{
   const assessmentsGivenRaw = document.getElementById('assessmentsGiven').value.trim();
   const assessmentsGiven = assessmentsGivenRaw ? assessmentsGivenRaw.split(',').map(s=>s.trim()).filter(Boolean) : [];
 
+  // Grade-level jump: current assessment is a numbered Level higher than the
+  // previous one. That's not a score regression to explain away - it's the
+  // headline ("scored so well we moved them up"), so it gets its own
+  // narrative instead of forcing it through the generic score-delta line.
+  const prevAssessmentsGiven = dataset.prevAssessmentsGiven || [];
+  const prevLevelLabel = prevAssessmentsGiven.find(n=>/^Level \d/i.test(n)) || '';
+  const currLevelLabel = assessmentsGiven.find(n=>/^Level \d/i.test(n)) || '';
+  const prevLevelNum = (prevLevelLabel.match(/Level (\d+)/i)||[])[1];
+  const currLevelNum = (currLevelLabel.match(/Level (\d+)/i)||[])[1];
+  const isLevelJump = !preMode && prevLevelNum && currLevelNum && (+currLevelNum > +prevLevelNum);
+
   // additional assessments (Numerical Fluency, etc.) — comparison-aware
   const extraNotes = extraCharts
     .filter(c => c.label.trim())
@@ -3046,13 +3080,21 @@ document.getElementById('genBtn').addEventListener('click', ()=>{
   const assessmentPhrase = assessmentsGiven.length
     ? (assessmentsGiven.length===1 ? `a ${assessmentsGiven[0]} assessment` : `the ${listJoin(assessmentsGiven)} assessments`)
     : 'an assessment';
-  body += center.progressTrigger === 'learningPlan'
-    ? `This is ${staff} with Mathnasium. ${student} recently completed ${pr.poss} Learning Plan, so it was time for a reassessment, and I wanted to share an update on ${pr.poss} progress! `
-    : `This is ${staff} with Mathnasium. ${student} recently completed ${assessmentPhrase}, and I wanted to share an update on ${pr.poss} progress! `;
-  if(!preMode && prevPlan){
-    body += `${pr.subj[0].toUpperCase()+pr.subj.slice(1)} had been working on ${pr.poss} ${prevPlan} lesson plan since the last update. `;
+
+  if(isLevelJump){
+    const prevLabelClean = forParentFacing(prevLevelLabel);
+    const currLabelClean = forParentFacing(currLevelLabel);
+    body += `This is ${staff} with Mathnasium. ${student} recently completed ${pr.poss} ${prevLabelClean} assessment and scored ${prevScore} overall! Since ${pr.subj} performed so well, we gave ${pr.obj} our ${currLabelClean} assessment for ${pr.poss} next progress check. `;
+    body += `${pr.subj[0].toUpperCase()+pr.subj.slice(1)} scored ${currScore} overall on this new, more advanced assessment. A skill-by-skill breakdown is attached to this email.\n\n`;
+  } else {
+    body += center.progressTrigger === 'learningPlan'
+      ? `This is ${staff} with Mathnasium. ${student} recently completed ${pr.poss} Learning Plan, so it was time for a reassessment, and I wanted to share an update on ${pr.poss} progress! `
+      : `This is ${staff} with Mathnasium. ${student} recently completed ${assessmentPhrase}, and I wanted to share an update on ${pr.poss} progress! `;
+    if(!preMode && prevPlan){
+      body += `${pr.subj[0].toUpperCase()+pr.subj.slice(1)} had been working on ${pr.poss} ${prevPlan} lesson plan since the last update. `;
+    }
+    body += `${scoreLine} A skill-by-skill breakdown is attached to this email.\n\n`;
   }
-  body += `${scoreLine} A skill-by-skill breakdown is attached to this email.\n\n`;
 
   if(mastery.length){
     body += preMode
