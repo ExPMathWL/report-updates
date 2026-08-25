@@ -221,7 +221,7 @@
 
   .top-controls{display:flex;gap:12px;flex-wrap:wrap;align-items:stretch;margin-top:20px;}
   .top-controls .mode-toggle{flex:1 1 280px;}
-  .top-controls-center{flex:0 0 160px;min-width:160px;margin:0;}
+  .top-controls-center{flex:1 1 220px;min-width:220px;margin:0;}
   .top-controls-sibling{flex:1 1 100%;margin:2px 0 0 0;}
 
   .sibling-tab{
@@ -445,12 +445,15 @@
         <span>Risk-Free Assessment <span style="font-weight:400;">(new lead)</span></span>
       </label>
     </div>
-    <div class="field top-controls-center">
-      <label>Center</label>
-      <select id="emailCenter">
-        <option value="WL">West Linn</option>
-        <option value="MEV">East Vancouver</option>
-      </select>
+    <div class="mode-toggle top-controls-center" id="emailCenterToggle">
+      <label id="centerLabelMEV">
+        <input type="radio" name="emailCenter" value="MEV">
+        <span>East Vancouver</span>
+      </label>
+      <label class="active" id="centerLabelWL">
+        <input type="radio" name="emailCenter" value="WL" checked>
+        <span>West Linn</span>
+      </label>
     </div>
     <label class="toggle-row top-controls-sibling">
       <input type="checkbox" id="siblingModeToggle">
@@ -1278,6 +1281,21 @@ function parseNarrativeReport(rows){
     }
   }
 
+  // A single Mastery Report file can already BE a comparison (it bakes both
+  // an Initial Assessment score and a Recent Assessment score into one PDF -
+  // no second file needed). The footer line ("38 / 41 93%") only ever gives
+  // the Recent score, so grab the Initial score from its own labeled box too
+  // - same merged-row layout as the date above ("Initial Assessment 19 / 41
+  // Recent Assessment 38 / 41 Improvement" all on one line).
+  let initialOverall = null;
+  if(isMastery){
+    const initRow = rows.find(r => /Initial Assessment\s+\d+\s*\/\s*\d+/i.test(joinRow(r)));
+    if(initRow){
+      const m = joinRow(initRow).match(/Initial Assessment\s+(\d+)\s*\/\s*(\d+)/i);
+      if(m) initialOverall = {num:m[1], den:m[2]};
+    }
+  }
+
   const categories = []; // {name, num, den, mastered:[], inProgress:[]}
   let currentCat = null;
   const fallbackCategories = []; // used only when there's no Strengths/Opportunities detail at all
@@ -1349,7 +1367,7 @@ function parseNarrativeReport(rows){
   });
 
   return {mode: isMastery ? 'mastery' : 'assessment', studentName, date:dateStr,
-          categories, fallbackCategories, overall, topAssessments: parseTwoCardScores(rows)};
+          categories, fallbackCategories, overall, initialOverall, topAssessments: parseTwoCardScores(rows)};
 }
 
 /* Numerical Fluency shows up as its own category ("Addition and Subtraction
@@ -1630,7 +1648,7 @@ function guessAssessmentNamesFromFilename(filename){
   // Assessment Selection Guide's official naming, not confirmed against a
   // real Radius export yet (unlike Level/Computation, which are verified) -
   // worth double-checking the first time one of these actually comes through.
-  const anchorRe = /(Great_Foundations|Numerical_Fluency|Level_\d+|Computation|Algebra_Readiness_Extension|Algebra_Readiness|Algebra_1|Algebra_2|Geometry_Readiness|Geometry_w(?:ith)?_Proofs|Geometry|HS_Fundamental|High_School_Fundamental|HMM_Fundamental|HMM_Trigonometry|HMM_Linear|HMM_Quadratic|HMM_Advanced_(?:I|II|1|2)|Trigonometry|Precalculus|Integrated_1|Integrated_2|SAT_Basic|SAT_Advanced|Extension_Assessment_\d+|Extension_Checkup_Algebra_Readiness)/g;
+  const anchorRe = /(Great_Foundations|Numerical_Fluency|Level_\d+|Computation|Algebra_Readiness_Extension|Algebra_Readiness|Algebra_1|Algebra_2|Geometry_Readiness|Geometry_w(?:ith)?_Proofs|Geometry|HS_Fundamental|High_School_Fundamental|HMM_Fundamental|HMM_Trigonometry|HMM_Linear|HMM_Quadratic|HMM_Advanced_(?:I|II|1|2)|Trigonometry|Precalculus|Integrated_Math_1|Integrated_Math_2|SAT_Basic|SAT_Advanced|Extension_Assessment_\d+|Extension_Checkup_Algebra_Readiness)/g;
   const starts = [];
   let m;
   while((m = anchorRe.exec(s))){ starts.push(m.index); }
@@ -1688,7 +1706,7 @@ document.getElementById('parseBtn').addEventListener('click', async ()=>{
     // as a main assessment in rare cases, but that's rare enough that it's
     // not worth auto-detecting; staff can move a card manually if that
     // specific case comes up.
-    const isMainNarrative = c => c.kind==='narrative' && c.assessmentNames.some(n=>/^(Level \d|Great Foundations|Algebra Readiness(?! Extension)|Algebra 1|Algebra 2|Geometry Readiness|Geometry(?! Readiness)|Geometry w(?:ith)? Proofs|HMM Fundamental|HMM Trigonometry|HMM Linear|HMM Quadratic|HMM Advanced|Trigonometry|Precalculus|Integrated 1|Integrated 2|SAT Basic|SAT Advanced)/i.test(n));
+    const isMainNarrative = c => c.kind==='narrative' && c.assessmentNames.some(n=>/^(Level \d|Great Foundations|Algebra Readiness(?! Extension)|Algebra 1|Algebra 2|Geometry Readiness|Geometry(?! Readiness)|Geometry w(?:ith)? Proofs|HMM Fundamental|HMM Trigonometry|HMM Linear|HMM Quadratic|HMM Advanced|Trigonometry|Precalculus|Integrated Math 1|Integrated Math 2|SAT Basic|SAT Advanced)/i.test(n));
     const byDate = (a,b) => parseFlexDate(a.dateRaw) - parseFlexDate(b.dateRaw);
     // If 2+ files being compared as prev/curr share the same date (or no date) and none
     // of them had a date typed in by hand, we genuinely can't tell which is older - flag
@@ -1707,7 +1725,80 @@ document.getElementById('parseBtn').addEventListener('click', async ()=>{
     const summary = []; // lines describing what got sorted where
     let leftovers = []; // classified files not used for the main slot
 
-    if(mainPool.length){
+    // Narrative files with more than one DISTINCT assessment name (a grade-
+    // level jump like Level 4 -> Level 5, or a same-day battery of totally
+    // unrelated assessments like Algebra Readiness + Integrated Math 1 +
+    // Geometry Readiness) never get force-merged into a single prev/curr
+    // comparison - that would mean comparing two unrelated assessment
+    // domains as if one were a retest of the other. Instead each distinct
+    // name gets its own breakdown (its own score, its own mastered topics),
+    // and the email covers every one of them.
+    const distinctNarrativeNames = mainKind === 'narrative'
+      ? new Set(narrativeMain.map(c=>c.assessmentNames[0] || 'Assessment'))
+      : new Set();
+
+    if(mainKind === 'narrative' && distinctNarrativeNames.size > 1){
+      const byName = new Map();
+      narrativeMain.forEach(c=>{
+        const name = c.assessmentNames[0] || 'Assessment';
+        if(!byName.has(name)) byName.set(name, []);
+        byName.get(name).push(c);
+      });
+
+      const breakdown = [];
+      const allCategories = [];
+      const usedFiles = [];
+      byName.forEach((files, name)=>{
+        files.sort(byDate);
+        const use = files.length <= 2 ? files : [files[0], files[files.length-1]];
+        usedFiles.push(...use);
+        let entry;
+        if(use.length === 1 && use[0].narrative.initialOverall){
+          // a lone Mastery Report file can already BE a comparison (Initial
+          // + Recent baked into one PDF) - don't flatten away the delta.
+          const only = use[0];
+          const folded = foldNarrativeSingle(only.narrative);
+          entry = {
+            name,
+            prevScore: fracLabelToPct(only.narrative.initialOverall.num, only.narrative.initialOverall.den),
+            currScore: folded.currScore, isComparison: true, dateRaw: only.dateRaw
+          };
+          folded.categories.forEach(cat=>cat.topics.forEach(t=>allCategories.push({...t, _assessment:name})));
+        } else if(use.length === 1){
+          const folded = foldNarrativeSingle(use[0].narrative);
+          entry = {name, prevScore:'', currScore: folded.currScore, isComparison:false, dateRaw: use[0].dateRaw};
+          folded.categories.forEach(cat=>cat.topics.forEach(t=>allCategories.push({...t, _assessment:name})));
+        } else {
+          const [p, c] = use;
+          const m2 = mergeTwoNarrativeReports(p.narrative, c.narrative);
+          entry = {name, prevScore: m2.prevScore, currScore: m2.currScore, isComparison:true, dateRaw: c.dateRaw};
+          if(orderIsUncertain(use)){
+            summary.push(`&#9888; <strong>${escapeAttr(name)}</strong>: couldn't tell which of these two came first &mdash; both show the same (or no) date and neither has a test date typed in. Double-check the order, or fill in the test dates above and re-analyze.`);
+          }
+          m2.categories.forEach(cat=>cat.topics.forEach(t=>allCategories.push({...t, _assessment:name})));
+        }
+        breakdown.push(entry);
+      });
+      breakdown.sort((a,b)=>parseFlexDate(a.dateRaw)-parseFlexDate(b.dateRaw));
+
+      const merged = {
+        studentName: usedFiles.length && usedFiles[usedFiles.length-1].narrative.studentName || '',
+        prevScore:'', prevDate:'', currScore:'', currDate:'',
+        categories: [{name:'All Topics', topics: allCategories}],
+        assessmentsGiven: breakdown.map(b=>b.name),
+        assessmentBreakdown: breakdown,
+        singleChartMode: false
+      };
+      summary.push(`Main assessments: <strong>${breakdown.map(b=>escapeAttr(b.name)).join('</strong>, <strong>')}</strong> &mdash; each gets its own breakdown in the email rather than being compared against each other.`);
+      const skipped = narrativeMain.filter(c=>!usedFiles.includes(c));
+      if(skipped.length) summary.push(`(${skipped.length} extra file(s) of an assessment type with 3+ dates fell in between and were set aside, see below)`);
+
+      dataset = merged;
+      document.getElementById('preAssessmentToggle').checked = false;
+      renderMeta();
+      renderTable();
+      leftovers = assessmentFiles.filter(c=>!usedFiles.includes(c));
+    } else if(mainPool.length){
       const mainUsed = mainPool.length <= 2 ? mainPool : [mainPool[0], mainPool[mainPool.length-1]];
       const mainSkipped = mainPool.length > 2 ? mainPool.slice(1, -1) : [];
 
@@ -2314,7 +2405,11 @@ function renderExtra(){
         const existingByName = new Map(card.topics.map(t=>[t.name.toLowerCase(), t]));
         card.topics = parsed.topics.map(nt=>{
           const existing = existingByName.get(nt.name.toLowerCase());
-          const prev = existing ? existing.prev : '';
+          // An explicitly-uploaded "previous report" file wins if one was
+          // given; otherwise fall back to a baked-in comparison from the
+          // chart itself (a "Comparison Chart" already has both bars in one
+          // PDF - no second file needed to know there was a "before").
+          const prev = existing ? existing.prev : (nt.prevValue || '');
           return {name:nt.name, curr:nt.value, prev, checked:isMentionWorthy({curr:nt.value, prev})};
         });
         if(parsed.overall) card.score = parsed.overall;
@@ -2450,8 +2545,27 @@ async function parseAnyAssessmentFile(file){
   }
 
   const chart = parseChart(rows);
+  // A "Comparison Chart" bakes a before/after pair into one PDF: each topic
+  // shows up as two consecutive rows with the same name (one per bar), which
+  // parseChart already captures as two separate {name, percent} entries in
+  // order. Pair them up here the same way foldComparisonChart already does
+  // for the main-assessment path — otherwise that improvement data gets
+  // silently flattened away before it ever reaches an Additional Assessment
+  // card, and every topic looks like a first-time snapshot instead of one
+  // that already showed a "before".
   const chartTopics = [];
-  chart.categories.forEach(cat=>cat.topics.forEach(t=>chartTopics.push({name:t.name, value:t.percent})));
+  chart.categories.forEach(cat=>{
+    for(let i=0; i<cat.topics.length; i++){
+      const a = cat.topics[i];
+      const b = cat.topics[i+1];
+      if(chart.mode==='comparison' && b && b.name===a.name){
+        chartTopics.push({name:a.name, value:b.percent, prevValue:a.percent});
+        i++;
+      } else {
+        chartTopics.push({name:a.name, value:a.percent});
+      }
+    }
+  });
   if(chartTopics.length){
     // Chart PDFs print the assessment name in their subtitle line (either a
     // bare "Checkup #N" or a named "Mathnasium {Name} Checkup Assessment"
@@ -2470,11 +2584,16 @@ async function parseAnyAssessmentFile(file){
   return null;
 }
 
-/* Builds a card's topics/score from ONE parsed file (snapshot, no comparison). */
+/* Builds a card's topics/score from ONE parsed file (snapshot, no comparison
+   file was uploaded) - but the file itself might already be a "Comparison
+   Chart" with a prevValue baked in from its own before/after bars. */
 function buildCardFromSingle(parsed){
   if(parsed.kind==='chart'){
     return {
-      topics: parsed.topics.map(nt=>({name:nt.name, curr:nt.value, prev:'', checked:isMentionWorthy({curr:nt.value, prev:''})})),
+      topics: parsed.topics.map(nt=>{
+        const prev = nt.prevValue || '';
+        return {name:nt.name, curr:nt.value, prev, checked:isMentionWorthy({curr:nt.value, prev})};
+      }),
       score: parsed.overall || '', prevScore:'',
       studentName: parsed.studentName, narrativeCurr:null
     };
@@ -2572,12 +2691,19 @@ document.querySelectorAll('input[name="emailMode"]').forEach(radio=>{
    overview instead. Homework policy isn't center-dependent, so it's left
    alone here. Applied on page load and whenever the center changes. */
 function applyCenterDefaults(){
-  const isMev = document.getElementById('emailCenter').value === 'MEV';
+  const isMev = document.querySelector('input[name="emailCenter"]:checked').value === 'MEV';
   document.getElementById('rfaScheduling').checked = isMev;
   document.getElementById('rfaLearningPlan').checked = isMev;
   document.getElementById('rfaDayInLife').checked = !isMev;
 }
-document.getElementById('emailCenter').addEventListener('change', applyCenterDefaults);
+document.querySelectorAll('input[name="emailCenter"]').forEach(radio=>{
+  radio.addEventListener('change', ()=>{
+    const value = document.querySelector('input[name="emailCenter"]:checked').value;
+    document.getElementById('centerLabelMEV').classList.toggle('active', value === 'MEV');
+    document.getElementById('centerLabelWL').classList.toggle('active', value === 'WL');
+    applyCenterDefaults();
+  });
+});
 applyCenterDefaults();
 
 /* ---------------------------------------------------------
@@ -2653,7 +2779,7 @@ function buildChildSection(childDataset, childExtraCharts, assessmentsGivenStr, 
     text += `We aim for students to score somewhere around ${STANDARD_SCORE_RANGE} on an initial assessment, enough to show real prior knowledge while still leaving clear room to grow.\n\n`;
   } else {
     const assessmentsGiven = (assessmentsGivenStr||'').split(',').map(s=>s.trim()).filter(Boolean);
-    const mainLabel = assessmentsGiven.find(n => /^(Level \d|Checkup|Great Foundations|Algebra Readiness(?! Extension)|Algebra 1|Algebra 2|Geometry Readiness|Geometry(?! Readiness)|Geometry w(?:ith)? Proofs|HMM Fundamental|HMM Trigonometry|HMM Linear|HMM Quadratic|HMM Advanced|Trigonometry|Precalculus|Integrated 1|Integrated 2|SAT Basic|SAT Advanced)/i.test(n)) || assessmentsGiven[0] || '';
+    const mainLabel = assessmentsGiven.find(n => /^(Level \d|Checkup|Great Foundations|Algebra Readiness(?! Extension)|Algebra 1|Algebra 2|Geometry Readiness|Geometry(?! Readiness)|Geometry w(?:ith)? Proofs|HMM Fundamental|HMM Trigonometry|HMM Linear|HMM Quadratic|HMM Advanced|Trigonometry|Precalculus|Integrated Math 1|Integrated Math 2|SAT Basic|SAT Advanced)/i.test(n)) || assessmentsGiven[0] || '';
     const mainLabelClean = forParentFacing(mainLabel);
     const mainBlurb = mainLabel ? findBlurb(mainLabel) : '';
     const score = fracLabelToPct(childDataset.currScore || '');
@@ -2695,7 +2821,7 @@ function generateRfaEmail(){
   const parent = document.getElementById('parentName').value.trim() || 'there';
   const staff = document.getElementById('staffName').value.trim() || '[Your name]';
   const pr = pronounSet(document.getElementById('pronoun').value);
-  const center = CENTER_INFO[document.getElementById('emailCenter').value];
+  const center = CENTER_INFO[document.querySelector('input[name="emailCenter"]:checked').value];
   const scheduling = document.getElementById('rfaScheduling').checked;
   const learningPlan = document.getElementById('rfaLearningPlan').checked;
   const dayInLife = document.getElementById('rfaDayInLife').checked;
@@ -2764,7 +2890,7 @@ function generateSiblingRfaEmail(){
 
   const parent = document.getElementById('parentName').value.trim() || 'there';
   const staff = document.getElementById('staffName').value.trim() || '[Your name]';
-  const center = CENTER_INFO[document.getElementById('emailCenter').value];
+  const center = CENTER_INFO[document.querySelector('input[name="emailCenter"]:checked').value];
   const scheduling = document.getElementById('rfaScheduling').checked;
   const learningPlan = document.getElementById('rfaLearningPlan').checked;
   const dayInLife = document.getElementById('rfaDayInLife').checked;
@@ -2942,7 +3068,7 @@ function generateSiblingProgressEmail(){
 
   const parent = document.getElementById('parentName').value.trim() || 'there';
   const staff = document.getElementById('staffName').value.trim() || '[Your name]';
-  const center = CENTER_INFO[document.getElementById('emailCenter').value];
+  const center = CENTER_INFO[document.querySelector('input[name="emailCenter"]:checked').value];
 
   const kids = students.map(s=>{
     const name = firstNameOf(s.meta.studentName) || s.dataset.studentName || 'the student';
@@ -3009,7 +3135,7 @@ document.getElementById('genBtn').addEventListener('click', ()=>{
   const parent = document.getElementById('parentName').value.trim() || 'there';
   const staff = document.getElementById('staffName').value.trim() || '[Your name]';
   const pr = pronounSet(document.getElementById('pronoun').value);
-  const center = CENTER_INFO[document.getElementById('emailCenter').value];
+  const center = CENTER_INFO[document.querySelector('input[name="emailCenter"]:checked').value];
   const prevPlan = document.getElementById('prevPlan').value.trim();
   const currScoreRaw = dataset.currScore || document.getElementById('currScore').value.trim();
   const prevScoreRaw = dataset.prevScore || document.getElementById('prevScore').value.trim();
@@ -3029,28 +3155,23 @@ document.getElementById('genBtn').addEventListener('click', ()=>{
       ? `${student} scored ${currScore} overall on ${pr.poss} initial assessment.`
       : `${student} scored ${currScore} overall on this assessment.`;
   }
+  // A score this high means the assessment is basically outgrown - flag that
+  // the next one is coming, rather than only reporting the score itself.
+  if(cv !== null && cv >= 85){
+    scoreLine += ` Since ${pr.subj} scored so well, we'll be moving ${pr.obj} up to the next assessment as well!`;
+  }
 
   const mastery = [];
   document.querySelectorAll('.mentionChk').forEach(cb=>{
     if(cb.checked){
       const [ci,ti] = cb.dataset.row.split('_').map(Number);
-      mastery.push(dataset.categories[ci].topics[ti].name);
+      const topic = dataset.categories[ci].topics[ti];
+      mastery.push({name: topic.name, assessment: topic._assessment || null});
     }
   });
   const planTopics = document.getElementById('planTopics').value.split('\n').map(s=>s.trim()).filter(Boolean);
   const assessmentsGivenRaw = document.getElementById('assessmentsGiven').value.trim();
   const assessmentsGiven = assessmentsGivenRaw ? assessmentsGivenRaw.split(',').map(s=>s.trim()).filter(Boolean) : [];
-
-  // Grade-level jump: current assessment is a numbered Level higher than the
-  // previous one. That's not a score regression to explain away - it's the
-  // headline ("scored so well we moved them up"), so it gets its own
-  // narrative instead of forcing it through the generic score-delta line.
-  const prevAssessmentsGiven = dataset.prevAssessmentsGiven || [];
-  const prevLevelLabel = prevAssessmentsGiven.find(n=>/^Level \d/i.test(n)) || '';
-  const currLevelLabel = assessmentsGiven.find(n=>/^Level \d/i.test(n)) || '';
-  const prevLevelNum = (prevLevelLabel.match(/Level (\d+)/i)||[])[1];
-  const currLevelNum = (currLevelLabel.match(/Level (\d+)/i)||[])[1];
-  const isLevelJump = !preMode && prevLevelNum && currLevelNum && (+currLevelNum > +prevLevelNum);
 
   // additional assessments (Numerical Fluency, etc.) — comparison-aware
   const extraNotes = extraCharts
@@ -3081,11 +3202,59 @@ document.getElementById('genBtn').addEventListener('click', ()=>{
     ? (assessmentsGiven.length===1 ? `a ${assessmentsGiven[0]} assessment` : `the ${listJoin(assessmentsGiven)} assessments`)
     : 'an assessment';
 
-  if(isLevelJump){
-    const prevLabelClean = forParentFacing(prevLevelLabel);
-    const currLabelClean = forParentFacing(currLevelLabel);
-    body += `This is ${staff} with Mathnasium. ${student} recently completed ${pr.poss} ${prevLabelClean} assessment and scored ${prevScore} overall! Since ${pr.subj} performed so well, we gave ${pr.obj} our ${currLabelClean} assessment for ${pr.poss} next progress check. `;
-    body += `${pr.subj[0].toUpperCase()+pr.subj.slice(1)} scored ${currScore} overall on this new, more advanced assessment. A skill-by-skill breakdown is attached to this email.\n\n`;
+  if(dataset.assessmentBreakdown && dataset.assessmentBreakdown.length > 1){
+    // Multiple genuinely different assessments (a grade-level jump, or a
+    // same-day battery of unrelated types) - never compressed into one
+    // score-delta line. A clean 2-assessment numbered Level jump still gets
+    // the nicer "scored so well we moved them up" framing as the opener,
+    // but every case gets a full breakdown of each assessment below.
+    const bd = dataset.assessmentBreakdown;
+    const names = bd.map(b=>forParentFacing(b.name));
+
+    let isCleanLevelJump = false;
+    if(bd.length === 2){
+      const n0 = (bd[0].name.match(/^Level (\d+)/i)||[])[1];
+      const n1 = (bd[1].name.match(/^Level (\d+)/i)||[])[1];
+      isCleanLevelJump = n0 && n1 && +n1 > +n0;
+    }
+
+    if(isCleanLevelJump){
+      const prevLabelClean = forParentFacing(bd[0].name);
+      const currLabelClean = forParentFacing(bd[1].name);
+      body += `This is ${staff} with Mathnasium. ${student} recently completed ${pr.poss} ${prevLabelClean} assessment and scored ${bd[0].currScore} overall! Since ${pr.subj} performed so well, we gave ${pr.obj} our ${currLabelClean} assessment for ${pr.poss} next progress check. Here's the full breakdown of both. A skill-by-skill breakdown is attached to this email.\n\n`;
+    } else {
+      body += `This is ${staff} with Mathnasium. ${student} recently completed ${listJoin(names)} assessments, and I wanted to share a full breakdown of ${pr.poss} results. A skill-by-skill breakdown is attached to this email.\n\n`;
+    }
+
+    bd.forEach((b,bi)=>{
+      const labelClean = forParentFacing(b.name);
+      body += `${labelClean} Results\n\n`;
+      const currNum = toComparableNum(b.currScore);
+      if(b.isComparison && b.prevScore){
+        const pv2 = toComparableNum(b.prevScore), cv2 = currNum;
+        const d2 = (pv2!==null && cv2!==null) ? Math.round((cv2-pv2)*10)/10 : null;
+        if(d2!==null && d2>0) body += `${pr.subj[0].toUpperCase()+pr.subj.slice(1)} improved by ${d2}%-points, moving from ${b.prevScore} to ${b.currScore} overall. `;
+        else if(d2!==null && d2<0) body += `${pr.subj[0].toUpperCase()+pr.subj.slice(1)} moved from ${b.prevScore} to ${b.currScore} overall. `;
+        else body += `${pr.subj[0].toUpperCase()+pr.subj.slice(1)} held steady at ${b.currScore} overall. `;
+      } else {
+        body += `${pr.subj[0].toUpperCase()+pr.subj.slice(1)} scored ${b.currScore} overall. `;
+      }
+      // A score this high means this assessment is basically outgrown too -
+      // but only worth flagging for the MOST RECENT one. An earlier
+      // assessment's high score already resulted in the next one being
+      // given (that's what this whole breakdown is showing), so repeating
+      // "we'll move them up" on it would just be describing something that
+      // already happened as if it were still pending.
+      if(bi === bd.length-1 && currNum !== null && currNum >= 85){
+        body += `Since ${pr.subj} scored so well on this one, we'll be moving ${pr.obj} up to the next assessment as well! `;
+      }
+      const theseTopics = mastery.filter(t=>t.assessment===b.name).map(t=>t.name);
+      if(theseTopics.length){
+        body += `Showed mastery in:\n\n`;
+        theseTopics.forEach(t=> body += `\u2022 ${t}\n`);
+      }
+      body += `\n`;
+    });
   } else {
     body += center.progressTrigger === 'learningPlan'
       ? `This is ${staff} with Mathnasium. ${student} recently completed ${pr.poss} Learning Plan, so it was time for a reassessment, and I wanted to share an update on ${pr.poss} progress! `
@@ -3094,15 +3263,16 @@ document.getElementById('genBtn').addEventListener('click', ()=>{
       body += `${pr.subj[0].toUpperCase()+pr.subj.slice(1)} had been working on ${pr.poss} ${prevPlan} lesson plan since the last update. `;
     }
     body += `${scoreLine} A skill-by-skill breakdown is attached to this email.\n\n`;
+
+    if(mastery.length){
+      body += preMode
+        ? `${student} showed mastery of the following topics:\n\n`
+        : `${student} showed mastery of the following topics since the last update:\n\n`;
+      mastery.forEach(t=> body += `\u2022 ${t.name}\n`);
+      body += `\n`;
+    }
   }
 
-  if(mastery.length){
-    body += preMode
-      ? `${student} showed mastery of the following topics:\n\n`
-      : `${student} showed mastery of the following topics since the last update:\n\n`;
-    mastery.forEach(t=> body += `• ${t}\n`);
-    body += `\n`;
-  }
   if(extraNotes.length){
     body += extraNotes.join('\n\n') + '\n\n';
   }
