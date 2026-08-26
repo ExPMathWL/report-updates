@@ -2713,9 +2713,11 @@ applyCenterDefaults();
 --------------------------------------------------------- */
 const ASSESSMENT_BLURBS = [
   {pattern: /Numerical Fluency.*Addition/i,
-   text: "The Numerical Fluency Addition and Subtraction assessment looks at how a student thinks about numbers and the relationships between them, checking that they're using efficient, scalable counting strategies rather than relying on rote memorization."},
+   text: "The Numerical Fluency Addition and Subtraction assessment looks at how a student thinks about numbers and the relationships between them, checking that they're using efficient, scalable counting strategies rather than relying on finger-counting techniques."},
   {pattern: /Numerical Fluency.*Multiplication/i,
-   text: "The Numerical Fluency Multiplication and Division assessment checks a student's command of their times tables and division facts, the foundation for multi-digit computation and fraction work ahead."},
+   text: "The Numerical Fluency Multiplication and Division assessment looks at how a student approaches multiplication and division facts, checking that they're using efficient mental strategies rather than relying on memorization of times tables. That foundation carries straight into multi-digit computation and fraction work ahead."},
+  {pattern: /^Computation$/i,
+   text: "Starting at Level 5, the Computation assessment checks that students can add, subtract, multiply, and divide with whole numbers, fractions, and decimals by hand, building the number sense they'll need as problems get more advanced."},
   {pattern: /Algebra Readiness/i,
    text: "The Algebra Readiness assessment is a middle school capstone evaluation that covers all of the skills we want a student to have mastered before beginning 9th grade Algebra 1."},
   {pattern: /Checkup\s*#?\s*5\b|Level\s*5\b/i,
@@ -3051,7 +3053,7 @@ function buildProgressChildSection(childDataset, childExtraCharts, childMeta, na
 
   const planTopics = (childMeta.planTopics||'').split('\n').map(s=>s.trim()).filter(Boolean);
   if(planTopics.length){
-    text += `Based on these results, we've built an updated Learning Plan. ${pr.subj[0].toUpperCase()+pr.subj.slice(1)} will begin their Learning Plan by focusing on the following skills:\n\n`;
+    text += `Based on these results, we've built an updated Learning Plan. ${pr.subj[0].toUpperCase()+pr.subj.slice(1)} will begin ${pr.poss} Learning Plan by focusing on the following skills:\n\n`;
     planTopics.forEach(t=> text += `\u2022 ${t}\n`);
     text += `\n`;
   }
@@ -3277,7 +3279,7 @@ document.getElementById('genBtn').addEventListener('click', ()=>{
     body += extraNotes.join('\n\n') + '\n\n';
   }
   if(planTopics.length){
-    body += `Based on these results, we've built an updated Learning Plan. ${pr.subj[0].toUpperCase()+pr.subj.slice(1)} will begin their Learning Plan by focusing on the following skills:\n\n`;
+    body += `Based on these results, we've built an updated Learning Plan. ${pr.subj[0].toUpperCase()+pr.subj.slice(1)} will begin ${pr.poss} Learning Plan by focusing on the following skills:\n\n`;
     planTopics.forEach(t=> body += `• ${t}\n`);
     body += `\n`;
   }
