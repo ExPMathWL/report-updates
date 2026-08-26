@@ -1472,14 +1472,22 @@ function foldNarrativeSingle(report){
   const topics = mastered.length
     ? mastered.map(name=>({name, prev:null, curr:'Mastered'}))
     : report.fallbackCategories.map(c=>({name:c.name, prev:null, curr:fracLabelToPct(c.num, c.den)}));
+  // A single Mastery Report file can already BE a comparison — it bakes both
+  // an Initial Assessment score and a Recent Assessment score into one PDF.
+  // Don't silently drop that delta just because there's only one file/name;
+  // carry the Initial score through as prevScore so the email still frames
+  // this as growth rather than a flat "scored X%" snapshot.
+  const hasBakedComparison = !!report.initialOverall;
   return {
     studentName: report.studentName,
-    prevScore:'', prevDate:'',
+    prevScore: hasBakedComparison ? fracLabelToPct(report.initialOverall.num, report.initialOverall.den) : '',
+    prevDate:'',
     currScore: report.overall ? fracLabelToPct(report.overall.num, report.overall.den) : '',
     currDate: report.date || '',
     categories: [{name: mastered.length ? 'Mastered Concepts' : 'Skill Areas', topics}],
     nfCategories: narrativeNfCategories(report),
-    topAssessments: report.topAssessments
+    topAssessments: report.topAssessments,
+    isBakedComparison: hasBakedComparison
   };
 }
 
@@ -1807,7 +1815,7 @@ document.getElementById('parseBtn').addEventListener('click', async ()=>{
         const only = mainUsed[0];
         if(only.kind === 'narrative'){
           merged = foldNarrativeSingle(only.narrative);
-          merged.singleChartMode = true;
+          merged.singleChartMode = !merged.isBakedComparison;
           merged.assessmentsGiven = only.assessmentNames;
         } else {
           const chart = parseChart(await extractRowsFromPDF(only.file));
@@ -1822,7 +1830,7 @@ document.getElementById('parseBtn').addEventListener('click', async ()=>{
           const label = only.assessmentNames[0] || assessmentLabelFromCheckup(chart.checkup);
           merged.assessmentsGiven = label ? [label] : [];
         }
-        summary.push(`Main assessment: <strong>${escapeAttr(only.file.name)}</strong> (single snapshot)`);
+        summary.push(`Main assessment: <strong>${escapeAttr(only.file.name)}</strong> (${merged.isBakedComparison ? 'single file, but has a baked-in Initial → Recent comparison' : 'single snapshot'})`);
       } else {
         const [prevC, currC] = mainUsed;
         if(mainKind === 'narrative'){
