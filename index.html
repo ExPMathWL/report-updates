@@ -237,6 +237,12 @@
   .toggle-row{display:flex;align-items:flex-start;gap:8px;font-size:13.5px;font-weight:600;margin-bottom:10px;cursor:pointer;}
   .toggle-row input{margin-top:2px;}
   .toggle-row .toggle-note{font-weight:400;color:var(--ink-soft);display:block;font-size:12.5px;margin-top:2px;}
+  .extra-source-line{
+    display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;
+    font-size:13px;color:var(--ink-soft);background:#fcfcfb;border:1px solid var(--line);
+    border-radius:8px;padding:8px 12px;margin-bottom:10px;
+  }
+  .extra-source-text strong{color:var(--ink);font-weight:700;}
 
   button{
     font-family:inherit;
@@ -2306,7 +2312,7 @@ let extraCounter = 0;
 
 function addExtraCard(){
   extraCounter++;
-  extraCharts.push({id:extraCounter, label: extraCharts.length===0 ? 'Numerical Fluency Assessment' : 'Additional Assessment', prevScore:'', score:'', topics:[], _narrativeCurr:null, currFileName:'', prevFileName:''});
+  extraCharts.push({id:extraCounter, label: extraCharts.length===0 ? 'Numerical Fluency Assessment' : 'Additional Assessment', prevScore:'', score:'', topics:[], _narrativeCurr:null, currFileName:'', prevFileName:'', _uploadExpanded:false});
 }
 
 document.getElementById('addExtraBtn').addEventListener('click', ()=>{
@@ -2374,6 +2380,41 @@ function renderExtra(){
   extraCharts.forEach(card=>{
     const hasComparison = card.topics.some(t=>t.prev);
     const isPreset = PRESET_LABELS.includes(card.label);
+    // A card auto-filled by Step 1's "Analyze all" (or one that already has
+    // hand-entered topics) doesn't need its upload boxes front and center —
+    // the file input itself can't visually reflect a file that was assigned
+    // to it programmatically, so those boxes just look like an empty,
+    // waiting-for-input drop zone even when the card is fully populated.
+    // Collapse to a one-line summary once there's something to summarize;
+    // "Replace PDF" reopens the real drop zones for fixing a misclassified
+    // file or adding a comparison file later.
+    const hasSource = !!(card.currFileName || card.prevFileName || card.topics.length);
+    const expanded = card._uploadExpanded || !hasSource;
+    const uploadGridHtml = `
+        <div class="upload-grid" style="margin-bottom:10px;">
+          <div class="drop-wrap${card.currFileName ? ' filled' : ''}">
+            <label class="drop" style="padding:10px;">
+              <div class="sub" style="margin-top:0;">Current report PDF</div>
+              <div class="filename" style="font-size:12.5px;">${card.currFileName ? escapeAttr(card.currFileName) : 'Drag a PDF here, or click to choose'}</div>
+              <input type="file" accept="application/pdf" class="extraFile" data-id="${card.id}">
+            </label>
+            <button type="button" class="drop-clear extraClearFile" data-id="${card.id}" title="Remove this file">✕</button>
+          </div>
+          <div class="drop-wrap${card.prevFileName ? ' filled' : ''}">
+            <label class="drop" style="padding:10px;">
+              <div class="sub" style="margin-top:0;">Previous report PDF (optional, for a comparison email)</div>
+              <div class="filename" style="font-size:12.5px;">${card.prevFileName ? escapeAttr(card.prevFileName) : 'Drag a PDF here, or click to choose'}</div>
+              <input type="file" accept="application/pdf" class="extraFilePrev" data-id="${card.id}">
+            </label>
+            <button type="button" class="drop-clear extraClearFilePrev" data-id="${card.id}" title="Remove this file">✕</button>
+          </div>
+        </div>
+        ${hasSource ? `<div style="margin:-4px 0 10px;"><button type="button" class="btn-ghost btn-sm extraCollapseUpload" data-id="${card.id}">Done \u2014 hide upload boxes</button></div>` : ''}`;
+    const sourceSummaryHtml = `
+        <div class="extra-source-line">
+          <span class="extra-source-text">${card.currFileName ? `Source: <strong>${escapeAttr(card.currFileName)}</strong>` : 'No PDF attached &mdash; added manually'}${card.prevFileName ? ` &middot; Previous: <strong>${escapeAttr(card.prevFileName)}</strong>` : ''}</span>
+          <button type="button" class="btn-ghost btn-sm extraToggleUpload" data-id="${card.id}">${card.currFileName || card.prevFileName ? 'Replace PDF' : 'Attach PDF'}</button>
+        </div>`;
     html += `<div class="step" style="margin-top:14px;border-color:var(--line);">
       <div class="step-body" style="padding:14px 16px;">
         <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-bottom:12px;">
@@ -2395,25 +2436,8 @@ function renderExtra(){
           </div>
           <button class="tag-del delExtraBtn" data-id="${card.id}" title="Remove this assessment" style="margin-bottom:8px;">✕ Remove</button>
         </div>
-        <div class="upload-grid" style="margin-bottom:10px;">
-          <div class="drop-wrap${card.currFileName ? ' filled' : ''}">
-            <label class="drop" style="padding:10px;">
-              <div class="sub" style="margin-top:0;">Current report PDF</div>
-              <div class="filename" style="font-size:12.5px;">${card.currFileName ? escapeAttr(card.currFileName) : 'Drag a PDF here, or click to choose'}</div>
-              <input type="file" accept="application/pdf" class="extraFile" data-id="${card.id}">
-            </label>
-            <button type="button" class="drop-clear extraClearFile" data-id="${card.id}" title="Remove this file">✕</button>
-          </div>
-          <div class="drop-wrap${card.prevFileName ? ' filled' : ''}">
-            <label class="drop" style="padding:10px;">
-              <div class="sub" style="margin-top:0;">Previous report PDF (optional, for a comparison email)</div>
-              <div class="filename" style="font-size:12.5px;">${card.prevFileName ? escapeAttr(card.prevFileName) : 'Drag a PDF here, or click to choose'}</div>
-              <input type="file" accept="application/pdf" class="extraFilePrev" data-id="${card.id}">
-            </label>
-            <button type="button" class="drop-clear extraClearFilePrev" data-id="${card.id}" title="Remove this file">✕</button>
-          </div>
-        </div>
-        <div class="extraStatus status" data-id="${card.id}"></div>
+        ${expanded ? uploadGridHtml : sourceSummaryHtml}
+        <div class="extraStatus status${card._statusClass ? ' '+card._statusClass : ''}" data-id="${card.id}">${card._statusText ? escapeAttr(card._statusText) : ''}</div>
         <table class="results" style="margin-top:8px;">
           <thead><tr>
             <th>Topic / note</th>
@@ -2438,6 +2462,17 @@ function renderExtra(){
     </div>`;
   });
   host.innerHTML = html;
+
+  host.querySelectorAll('.extraToggleUpload').forEach(el=>el.addEventListener('click', e=>{
+    const card = extraCharts.find(c=>c.id===+e.target.dataset.id);
+    card._uploadExpanded = true;
+    renderExtra();
+  }));
+  host.querySelectorAll('.extraCollapseUpload').forEach(el=>el.addEventListener('click', e=>{
+    const card = extraCharts.find(c=>c.id===+e.target.dataset.id);
+    card._uploadExpanded = false;
+    renderExtra();
+  }));
 
   host.querySelectorAll('.extraLabelSelect').forEach(el=>el.addEventListener('change', e=>{
     const card = extraCharts.find(c=>c.id===+e.target.dataset.id);
@@ -2523,6 +2558,7 @@ function renderExtra(){
     card.topics = [];
     card.score = '';
     card._narrativeCurr = null;
+    card._uploadExpanded = true; // keep the boxes open so a replacement can be picked right away
     renderExtra();
   }));
   host.querySelectorAll('.extraClearFilePrev').forEach(el=>el.addEventListener('click', e=>{
@@ -2531,6 +2567,7 @@ function renderExtra(){
     card.prevFileName = '';
     card.prevScore = '';
     card.topics.forEach(t=>{ t.prev = ''; });
+    card._uploadExpanded = true;
     renderExtra();
   }));
 
@@ -2546,9 +2583,10 @@ function renderExtra(){
     try{
       const parsed = await parseAnyAssessmentFile(file);
       if(!parsed){
-        statusEl.textContent = 'Could not auto-read that PDF (this happens with the raw checkbox-style Numerical Fluency checkup, since the checkmarks are images, not text). Add the score/notes by hand below instead.';
-        statusEl.className = 'status err';
+        card._statusText = 'Could not auto-read that PDF (this happens with the raw checkbox-style Numerical Fluency checkup, since the checkmarks are images, not text). Add the score/notes by hand below instead.';
+        card._statusClass = 'err';
         card._narrativeCurr = null;
+        card._uploadExpanded = true; // keep boxes open so they can see the error and retry
       } else if(parsed.kind==='chart'){
         const existingByName = new Map(card.topics.map(t=>[t.name.toLowerCase(), t]));
         card.topics = parsed.topics.map(nt=>{
@@ -2562,8 +2600,9 @@ function renderExtra(){
         });
         if(parsed.overall) card.score = parsed.overall;
         card._narrativeCurr = null;
-        statusEl.textContent = `Analyzed ${card.topics.length} row(s). Review below.`;
-        statusEl.className = 'status ok';
+        card._statusText = `Analyzed ${card.topics.length} row(s). Review below.`;
+        card._statusClass = 'ok';
+        card._uploadExpanded = false;
       } else {
         const nr = parsed.narrative;
         card._narrativeCurr = nr;
@@ -2578,14 +2617,17 @@ function renderExtra(){
         if(nr.studentName && !document.getElementById('studentName').value){
           document.getElementById('studentName').value = firstNameOf(nr.studentName);
         }
-        statusEl.textContent = `Analyzed ${card.topics.length} row(s). Review below.`;
-        statusEl.className = 'status ok';
+        card._statusText = `Analyzed ${card.topics.length} row(s). Review below.`;
+        card._statusClass = 'ok';
+        card._uploadExpanded = false;
       }
       renderExtra();
     } catch(err){
       console.error(err);
-      statusEl.textContent = 'Could not analyze that PDF. Add notes by hand below instead.';
-      statusEl.className = 'status err';
+      card._statusText = 'Could not analyze that PDF. Add notes by hand below instead.';
+      card._statusClass = 'err';
+      card._uploadExpanded = true;
+      renderExtra();
     }
   }));
 
@@ -2601,8 +2643,9 @@ function renderExtra(){
     try{
       const parsed = await parseAnyAssessmentFile(file);
       if(!parsed){
-        statusEl.textContent = 'Could not auto-read that previous-report PDF. Fill in the "Prev" column by hand instead.';
-        statusEl.className = 'status err';
+        card._statusText = 'Could not auto-read that previous-report PDF. Fill in the "Prev" column by hand instead.';
+        card._statusClass = 'err';
+        card._uploadExpanded = true;
       } else if(card._narrativeCurr && parsed.kind==='narrative'){
         // both current and previous are narrative reports — rebuild the topic list to only
         // show concepts newly mastered since the previous report (same rule as the main flow)
@@ -2620,7 +2663,7 @@ function renderExtra(){
               const key = name.toLowerCase();
               return {name, curr:'Mastered', prev: prevInProgress.has(key) ? 'Not yet' : '', checked:true};
             });
-          statusEl.textContent = `Found ${card.topics.length} newly mastered concept(s). Review below.`;
+          card._statusText = `Found ${card.topics.length} newly mastered concept(s). Review below.`;
         } else {
           const prevFlat = new Map(prevNr.fallbackCategories.map(c=>[c.name.toLowerCase(), c]));
           card.topics = currNr.fallbackCategories.map(c=>{
@@ -2629,9 +2672,10 @@ function renderExtra(){
             const prev = m?fracLabelToPct(m.num,m.den):'';
             return {name:c.name, curr, prev, checked:isMentionWorthy({curr, prev})};
           });
-          statusEl.textContent = `Compared ${card.topics.length} categor${card.topics.length===1?'y':'ies'}. Review below.`;
+          card._statusText = `Compared ${card.topics.length} categor${card.topics.length===1?'y':'ies'}. Review below.`;
         }
-        statusEl.className = 'status ok';
+        card._statusClass = 'ok';
+        card._uploadExpanded = false;
       } else if(parsed.kind==='chart'){
         if(parsed.overall) card.prevScore = parsed.overall;
         const prevByName = new Map(parsed.topics.map(t=>[t.name.toLowerCase(), t.value]));
@@ -2645,17 +2689,21 @@ function renderExtra(){
             card.topics.push({name:t.name, prev:t.value, curr:'', checked:false});
           }
         });
-        statusEl.textContent = `Matched ${usedNames.size} topic(s) to the current report. Review below.`;
-        statusEl.className = 'status ok';
+        card._statusText = `Matched ${usedNames.size} topic(s) to the current report. Review below.`;
+        card._statusClass = 'ok';
+        card._uploadExpanded = false;
       } else {
-        statusEl.textContent = 'That previous-report format doesn\'t match the current report\'s format. Fill in the "Prev" column by hand instead.';
-        statusEl.className = 'status err';
+        card._statusText = 'That previous-report format doesn\'t match the current report\'s format. Fill in the "Prev" column by hand instead.';
+        card._statusClass = 'err';
+        card._uploadExpanded = true;
       }
       renderExtra();
     } catch(err){
       console.error(err);
-      statusEl.textContent = 'Could not analyze that PDF. Fill in the "Prev" column by hand instead.';
-      statusEl.className = 'status err';
+      card._statusText = 'Could not analyze that PDF. Fill in the "Prev" column by hand instead.';
+      card._statusClass = 'err';
+      card._uploadExpanded = true;
+      renderExtra();
     }
   }));
 }
