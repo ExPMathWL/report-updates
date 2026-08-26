@@ -295,6 +295,48 @@
     color:var(--red);margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--line);
   }
 
+  /* Milestone table (Exit Summary mode) */
+  .ms-head{
+    display:grid;grid-template-columns:1.4fr 0.85fr 0.7fr 0.85fr 0.7fr 1.2fr 28px;gap:8px;
+    font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-soft);font-weight:700;
+    padding:0 0 6px 0;
+  }
+  .ms-row{
+    display:grid;grid-template-columns:1.4fr 0.85fr 0.7fr 0.85fr 0.7fr 1.2fr 28px;gap:8px;
+    align-items:center;margin-bottom:8px;
+  }
+  .ms-row input{
+    font-family:inherit;font-size:14px;padding:8px 10px;
+    border:1.5px solid var(--grey-light);border-left:4px solid var(--grey-light);
+    border-radius:6px;background:#fcfcfb;color:var(--ink);width:100%;
+  }
+  .ms-row input:hover{border-color:var(--grey);}
+  .ms-row input:focus{outline:2px solid var(--red);outline-offset:0;border-color:var(--red);background:#fff;}
+  .ms-row input.has-value{border-left-color:var(--red);background:#fff;}
+  .ms-remove{
+    background:none;border:none;color:var(--ink-soft);cursor:pointer;font-size:15px;
+    width:28px;height:28px;border-radius:6px;
+  }
+  .ms-remove:hover{background:#fbeaea;color:var(--maroon);}
+  @media (max-width:900px){
+    .ms-head{display:none;}
+    .ms-row{grid-template-columns:1fr 1fr;row-gap:6px;padding:10px;border:1px solid var(--line);border-radius:8px;margin-bottom:10px;}
+    .ms-row input:nth-child(1),.ms-row input:nth-child(6){grid-column:1 / -1;}
+  }
+  .ms-chart-wrap{margin:14px 0;padding:14px;border:1px solid var(--line);border-radius:8px;background:#fcfcfb;}
+  .ms-chart-wrap svg{width:100%;height:auto;display:block;}
+  .sibling-tab{
+    font-family:inherit;font-size:13px;padding:6px 12px 6px 14px;border:1.5px solid var(--grey-light);
+    border-radius:20px 0 0 20px;background:#fcfcfb;color:var(--ink);cursor:pointer;border-right:none;
+  }
+  .sibling-tab.active{border-color:var(--red);background:var(--red);color:#fff;}
+  .sibling-tab-remove{
+    font-family:inherit;font-size:12px;padding:6px 10px;border:1.5px solid var(--grey-light);
+    border-radius:0 20px 20px 0;background:#fcfcfb;color:var(--ink-soft);cursor:pointer;
+  }
+  .sibling-tab.active + .sibling-tab-remove{border-color:var(--red);}
+  .sibling-tab-remove:hover{color:var(--maroon);}
+
   input[type=checkbox],input[type=radio]{
     accent-color:var(--red);
     width:17px;height:17px;
@@ -444,6 +486,10 @@
         <input type="radio" name="emailMode" value="rfa">
         <span>Risk-Free Assessment <span style="font-weight:400;">(new lead)</span></span>
       </label>
+      <label id="modeLabelExit">
+        <input type="radio" name="emailMode" value="exit">
+        <span>Exit Summary <span style="font-weight:400;">(leaving student)</span></span>
+      </label>
     </div>
     <div class="mode-toggle top-controls-center" id="emailCenterToggle">
       <label id="centerLabelMEV">
@@ -504,6 +550,85 @@
       </div>
     </div>
   </details>
+
+  <!-- STEP 2 (Exit Summary mode) -->
+  <div class="step" id="stepExit" style="display:none;">
+    <div class="step-head">
+      <div class="step-num">2</div>
+      <h2>Student &amp; milestone history</h2>
+      <div class="hint">Type in the journey, the tool writes the narrative</div>
+    </div>
+    <div class="step-body">
+      <label class="toggle-row" style="margin-bottom:16px;">
+        <input type="checkbox" id="exitSiblingModeToggle">
+        <span>Sibling mode<span class="toggle-note">Fill in each sibling's own tab, then generate one combined email like the Wren &amp; Reed example.</span></span>
+      </label>
+      <div id="exitStudentTabsHost" style="display:none;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:16px;"></div>
+
+      <div class="field-section">
+        <div class="field-section-label">Parent / family (shared across siblings)</div>
+        <div class="meta-grid">
+          <div class="field"><label>Parent / guardian name</label><input type="text" id="exitParentName" placeholder="e.g. Kristine"></div>
+          <div class="field"><label>Your name (sender)</label><input type="text" id="exitStaffName" placeholder="e.g. Holly"></div>
+        </div>
+      </div>
+
+      <div class="field-section">
+        <div class="field-section-label">This student</div>
+        <div class="meta-grid">
+          <div class="field"><label>Student first name</label><input type="text" id="exitStudentName"></div>
+          <div class="field"><label>Pronoun</label>
+            <select id="exitPronoun">
+              <option value="they">they / them / their</option>
+              <option value="she">she / her / hers</option>
+              <option value="he">he / him / his</option>
+            </select>
+          </div>
+          <div class="field"><label>Enrolled since (optional)</label><input type="text" id="exitStartedWhen" placeholder="e.g. September 2022"></div>
+          <div class="field"><label>Length of enrollment (optional)</label><input type="text" id="exitYears" placeholder="e.g. nearly 4 years"></div>
+        </div>
+      </div>
+
+      <div class="field-section">
+        <div class="field-section-label">Milestone history</div>
+        <p class="desc" style="margin-top:0;">One row per assessment or level, in order. For the assessment the student is currently on, leave <strong>End date</strong> blank &mdash; the tool phrases that one as ongoing instead of completed. You can still fill in <strong>End score</strong> on that row with their current score, and it'll read as "has been making steady progress up to their current score of X%." Re-using an assessment name (a retake) is picked up automatically and phrased as "re-started." <strong>Note</strong> is optional free text tacked onto that row's sentence &mdash; useful for something like "we identified 29 skills to work on and covered 10 of them."</p>
+        <div class="ms-head">
+          <span>Assessment / level</span><span>Start date</span><span>Start score</span><span>End date</span><span>End score</span><span>Note (optional)</span><span></span>
+        </div>
+        <div id="milestoneHost"></div>
+        <div class="cat-add">
+          <button class="btn-secondary btn-sm" id="addMilestoneBtn">+ Add milestone</button>
+        </div>
+        <label class="toggle-row" style="margin-top:14px;">
+          <input type="checkbox" id="exitChartToggle" checked>
+          <span>Include a score-over-time chart<span class="toggle-note">Built from the milestone scores above, embedded as an image when you copy the email.</span></span>
+        </label>
+        <div class="ms-chart-wrap" id="msChartWrap" style="display:none;"></div>
+      </div>
+
+      <div class="field-section">
+        <div class="field-section-label">Personal note</div>
+        <p class="desc" style="margin-top:0;">Write the closing paragraph yourself &mdash; this is the part that should sound like you, not a template. It goes right after this student's milestone narrative.</p>
+        <textarea class="plan" id="exitPersonalNote" placeholder="Jenny has been an incredible student during her time at the center. She is thorough and diligent with her work..."></textarea>
+      </div>
+
+      <div class="field-section">
+        <div class="field-section-label">Shared for this email</div>
+        <label class="toggle-row" style="margin-bottom:12px;">
+          <input type="checkbox" id="exitCancellationToggle" checked>
+          <span>Include cancellation / billing details<span class="toggle-note">Uncheck if this student isn't cancelling (e.g. moving to another center). Applies once to the whole email, even with multiple siblings.</span></span>
+        </label>
+        <div id="exitCancellationFields">
+          <div class="meta-grid">
+            <div class="field"><label>Effective cancellation date</label><input type="text" id="exitEffectiveDate" placeholder="leave blank to fill in by hand"></div>
+            <div class="field"><label>Last charge date</label><input type="text" id="exitLastChargeDate" placeholder="leave blank to fill in by hand"></div>
+            <div class="field"><label>Referral bonus amount</label><input type="text" id="exitReferralAmount" value="$50"></div>
+          </div>
+          <p class="desc">Any field left blank gets inserted as an obvious <strong>[FILL IN]</strong> placeholder in the draft, so it's never silently missing before you send.</p>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <!-- STEP 2 -->
   <div class="step" id="stepMeta" style="display:none;">
@@ -1033,6 +1158,17 @@ async function parseLearningPlanReport(file){
   let studentName = '';
   let pastIntro = false;
   let done = false;
+  // Every row of text that appears before "This is your child's Learning
+  // Plan..." on page 1 (title, assessment subtitle, student name, date) is
+  // captured here. Radius reprints the assessment subtitle as a running
+  // header whenever the plan spans multiple pages, and — confirmed against
+  // a real multi-page export — that repeat doesn't reliably land near the
+  // top of the later page once everything's re-sorted by position, so
+  // position alone can't be used to recognize and skip it. Matching by exact
+  // text instead catches it (and anything else from that same header block)
+  // wherever it resurfaces, without hardcoding any particular assessment
+  // name.
+  const headerLines = new Set();
 
   for(let pageNum=1; pageNum<=pdf.numPages && !done; pageNum++){
     const page = await pdf.getPage(pageNum);
@@ -1069,8 +1205,11 @@ async function parseLearningPlanReport(file){
       const text = row.map(i=>i.text).join(' ').replace(/\s+/g,' ').trim();
       if(!text) continue;
 
-      if(pageNum===1 && !studentName && /^Learning Plan Report$/i.test(text)) continue;
-      if(pageNum===1 && !studentName && !/^Mathnasium/i.test(text)){ studentName = text; continue; }
+      if(pageNum===1 && !pastIntro){
+        if(/^Learning Plan Report$/i.test(text)){ headerLines.add(text); continue; }
+        if(!studentName && !/^Mathnasium/i.test(text)){ studentName = text; headerLines.add(text); continue; }
+        if(!/^This is your child's Learning Plan/i.test(text)) headerLines.add(text);
+      }
 
       if(/^This is your child's Learning Plan/i.test(text)){ pastIntro = true; continue; }
       if(!pastIntro) continue;
@@ -1080,6 +1219,7 @@ async function parseLearningPlanReport(file){
       if(/^(Center Director|Mathnasium of [A-Za-z ]+\||www\.|\(\d{3}\)\s*\d{3}-\d{4})/i.test(text)){ done = true; break; }
       if(/^Supplemental Topic$/i.test(text)){ done = true; break; }
       if(LP_LEGEND_RE.test(text)) continue; // the icon legend line itself, not a topic
+      if(headerLines.has(text)) continue; // a repeat of page 1's title/subtitle/name block, not a topic
 
       const rowY = row.reduce((s,i)=>s+i.y,0)/row.length;
       const [vx, vy] = viewport.convertToViewportPoint(561, rowY); // 561 = icon column midpoint, pdf-space
@@ -2675,24 +2815,601 @@ function escapeAttr(s){
 /* ---------------------------------------------------------
    EMAIL MODE (Progress Update vs Risk-Free Assessment)
 --------------------------------------------------------- */
+/* Exit Summary mode replaces the whole PDF-driven flow (Steps 1, +extras, 3,
+   4) with a single manual-entry step, since a multi-year exit narrative can't
+   come from any one Radius export the way Progress Update / RFA data can. */
+function applyEmailModeVisibility(){
+  const mode = document.querySelector('input[name="emailMode"]:checked').value;
+  const isRfa = mode === 'rfa';
+  const isExit = mode === 'exit';
+
+  document.getElementById('modeLabelProgress').classList.toggle('active', mode === 'progress');
+  document.getElementById('modeLabelRfa').classList.toggle('active', isRfa);
+  document.getElementById('modeLabelExit').classList.toggle('active', isExit);
+
+  document.getElementById('rfaPanel').style.display = (!isExit && isRfa) ? 'block' : 'none';
+  document.getElementById('progressOnlyFields').style.display = (!isExit && !isRfa) ? 'block' : 'none';
+  document.getElementById('progressOnlyToggle').style.display = (!isExit && !isRfa) ? 'block' : 'none';
+  document.getElementById('currScoreLabel').textContent = isRfa ? 'Assessment score' : 'Current score';
+  document.getElementById('currDateLabel').textContent = isRfa ? 'Assessment date' : 'Current date';
+
+  // Steps that only make sense for the PDF-parsing flow: force-hide them for
+  // Exit Summary, but otherwise leave their visibility exactly as the
+  // existing parse/manual-entry flow already manages it (don't touch it here).
+  const step1 = document.querySelector('.step'); // Step 1 (Upload) is the first .step in the DOM
+  if(isExit){
+    step1.style.display = 'none';
+    document.getElementById('extraDetails').style.display = 'none';
+    document.getElementById('stepMeta').style.display = 'none';
+    document.getElementById('stepTable').style.display = 'none';
+    document.getElementById('stepPlan').style.display = 'none';
+    document.getElementById('stepExit').style.display = 'block';
+    document.getElementById('stepEmail').style.display = 'block';
+  } else {
+    step1.style.display = '';
+    document.getElementById('extraDetails').style.display = '';
+    document.getElementById('stepExit').style.display = 'none';
+    // stepMeta / stepTable / stepPlan / stepEmail stay whatever the
+    // parse/manual-entry flow already set them to.
+  }
+
+  // Sibling mode isn't wired up for the milestone flow — hide the toggle rather
+  // than let it silently do nothing.
+  const sibRow = document.getElementById('siblingModeToggle').closest('label');
+  if(sibRow) sibRow.style.display = isExit ? 'none' : '';
+
+  if(isExit){
+    if(!milestones.length) addMilestone();
+    renderMilestones();
+  }
+
+  if(isRfa && !isExit){
+    // a risk-free assessment is always a first-time single snapshot — no "previous" to compare
+    document.getElementById('preAssessmentToggle').checked = true;
+    dataset.singleChartMode = true;
+    renderTable();
+  }
+}
 document.querySelectorAll('input[name="emailMode"]').forEach(radio=>{
-  radio.addEventListener('change', ()=>{
-    const isRfa = document.querySelector('input[name="emailMode"]:checked').value === 'rfa';
-    document.getElementById('modeLabelProgress').classList.toggle('active', !isRfa);
-    document.getElementById('modeLabelRfa').classList.toggle('active', isRfa);
-    document.getElementById('rfaPanel').style.display = isRfa ? 'block' : 'none';
-    document.getElementById('progressOnlyFields').style.display = isRfa ? 'none' : 'block';
-    document.getElementById('progressOnlyToggle').style.display = isRfa ? 'none' : 'block';
-    document.getElementById('currScoreLabel').textContent = isRfa ? 'Assessment score' : 'Current score';
-    document.getElementById('currDateLabel').textContent = isRfa ? 'Assessment date' : 'Current date';
-    if(isRfa){
-      // a risk-free assessment is always a first-time single snapshot — no "previous" to compare
-      document.getElementById('preAssessmentToggle').checked = true;
-      dataset.singleChartMode = true;
-      renderTable();
+  radio.addEventListener('change', applyEmailModeVisibility);
+});
+
+/* ---------------------------------------------------------
+   EXIT SUMMARY MODE
+   A multi-year exit narrative can't be parsed from any single Radius
+   export the way Progress Update / RFA data can, so this whole mode is
+   manual-entry: a milestone table (one row per assessment/level the
+   student passed through), which the tool chains into the same kind of
+   prose walkthrough as the West Linn example, plus an optional simple
+   score-over-time chart built from the same rows.
+--------------------------------------------------------- */
+let milestones = [];
+let milestoneCounter = 0;
+let msChartDataUrl = null; // PNG data URL of the current chart, embedded on copy
+
+function addMilestone(){
+  milestoneCounter++;
+  milestones.push({id: milestoneCounter, name:'', startDate:'', startScore:'', endDate:'', endScore:'', note:''});
+}
+
+function renderMilestones(){
+  const host = document.getElementById('milestoneHost');
+  host.innerHTML = milestones.map(m => `
+    <div class="ms-row" data-id="${m.id}">
+      <input type="text" class="ms-name" data-id="${m.id}" placeholder="e.g. Level 7" value="${escapeAttr(m.name)}">
+      <input type="text" class="ms-start-date" data-id="${m.id}" placeholder="e.g. September 2022" value="${escapeAttr(m.startDate)}">
+      <input type="text" class="ms-start-score" data-id="${m.id}" placeholder="e.g. 67%" value="${escapeAttr(m.startScore)}">
+      <input type="text" class="ms-end-date" data-id="${m.id}" placeholder="e.g. January 2023 (blank = current)" value="${escapeAttr(m.endDate)}">
+      <input type="text" class="ms-end-score" data-id="${m.id}" placeholder="e.g. 98%" value="${escapeAttr(m.endScore)}">
+      <input type="text" class="ms-note" data-id="${m.id}" placeholder="e.g. covered 10 of 29 skills" value="${escapeAttr(m.note)}">
+      <button type="button" class="ms-remove" data-id="${m.id}" title="Remove this milestone">&times;</button>
+    </div>
+  `).join('');
+
+  host.querySelectorAll('input').forEach(inp=>{
+    inp.classList.toggle('has-value', !!inp.value.trim());
+    inp.addEventListener('input', ()=>{
+      const id = +inp.dataset.id;
+      const m = milestones.find(x=>x.id===id);
+      if(!m) return;
+      if(inp.classList.contains('ms-name')) m.name = inp.value;
+      else if(inp.classList.contains('ms-start-date')) m.startDate = inp.value;
+      else if(inp.classList.contains('ms-start-score')) m.startScore = inp.value;
+      else if(inp.classList.contains('ms-end-date')) m.endDate = inp.value;
+      else if(inp.classList.contains('ms-end-score')) m.endScore = inp.value;
+      else if(inp.classList.contains('ms-note')) m.note = inp.value;
+      inp.classList.toggle('has-value', !!inp.value.trim());
+      updateMsChart();
+    });
+  });
+
+  host.querySelectorAll('.ms-remove').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const id = +btn.dataset.id;
+      milestones = milestones.filter(x=>x.id!==id);
+      if(!milestones.length) addMilestone();
+      renderMilestones();
+    });
+  });
+
+  updateMsChart();
+}
+document.getElementById('addMilestoneBtn').addEventListener('click', ()=>{
+  addMilestone();
+  renderMilestones();
+});
+document.getElementById('exitChartToggle').addEventListener('change', updateMsChart);
+document.getElementById('exitCancellationToggle').addEventListener('change', (e)=>{
+  document.getElementById('exitCancellationFields').style.display = e.target.checked ? 'block' : 'none';
+});
+
+/* Flexible month/year parser for milestone dates — staff type approximate
+   dates for old milestones ("Sep '22", "September 2022", "9/2022"), not
+   exact days, so this is deliberately looser than parseFlexDate above. */
+function parseMonthYear(s){
+  if(!s) return null;
+  const str = String(s).trim();
+  const months = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+  let m = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if(m) return new Date(+m[3], +m[1]-1, +m[2]);
+  m = str.match(/^(\d{1,2})\/(\d{4})$/);
+  if(m) return new Date(+m[2], +m[1]-1, 1);
+  m = str.match(/^([A-Za-z]+)\.?\s*'?(\d{2,4})$/);
+  if(m){
+    const mi = months.findIndex(mm=>m[1].toLowerCase().startsWith(mm));
+    if(mi>=0){
+      let y = +m[2];
+      if(y<100) y += (y<50?2000:1900);
+      return new Date(y, mi, 1);
+    }
+  }
+  m = str.match(/^(\d{4})$/);
+  if(m) return new Date(+m[1], 0, 1);
+  return null;
+}
+
+/* Cleans up a raw score field (typed as "67", "67%", or "15/48") into a
+   consistent "X%" label for both the narrative and the chart's y-values. */
+function normalizePctLabel(raw){
+  if(!raw) return '';
+  const s = String(raw).trim();
+  if(!s) return '';
+  if(/^\d+(?:\.\d+)?\s*\/\s*\d+(?:\.\d+)?$/.test(s)) return fracLabelToPct(s);
+  if(/%\s*$/.test(s)) return s;
+  if(/^\d+(?:\.\d+)?$/.test(s)) return s + '%';
+  return s;
+}
+
+/* Builds the points fed to both the on-page SVG preview and the PNG
+   embedded on copy — one point per filled-in start score, plus one per
+   filled-in end score, always in milestone-table order. This deliberately
+   does NOT try to place points by parsed calendar date: a student's "current
+   score" on an ongoing last milestone has no end date to parse, and mixing
+   real parsed dates with a fallback for that case risked plotting it in the
+   wrong spot on the timeline entirely. Table order is already the source of
+   truth for the narrative above, so it's used here too — x is just each
+   point's position in that sequence. */
+function buildMsChartPoints(msArr){
+  const ms = msArr || milestones;
+  const pts = [];
+  ms.forEach(m=>{
+    if(m.startScore && m.startScore.trim()){
+      const v = toComparableNum(m.startScore);
+      if(v!==null) pts.push({y: v, dateLabel: m.startDate.trim(), tag: `${m.name.trim() || 'Start'} (start)`});
+    }
+    if(m.endScore && m.endScore.trim()){
+      const v = toComparableNum(m.endScore);
+      if(v!==null) pts.push({y: v, dateLabel: m.endDate.trim(), tag: `${m.name.trim() || 'End'} (end)`});
     }
   });
-});
+  pts.forEach((p,i)=>{ p.x = i; });
+  return pts;
+}
+
+/* Shared drawing routine — draws the same chart onto either an inline SVG
+   string (live on-page preview) or a canvas (for the PNG embedded in the
+   copied email, since Gmail paste needs an actual image, not inline SVG). */
+function drawMsChartSVG(pts, w, h){
+  if(pts.length < 2) return '';
+  const pad = {t:16, r:16, b:34, l:36};
+  const xMax = pts.length - 1;
+  const yMin = 0, yMax = 100;
+  const xScale = i => pad.l + (xMax>0 ? i/xMax : 0.5) * (w-pad.l-pad.r);
+  const yScale = y => (h-pad.b) - ((y-yMin)/(yMax-yMin)) * (h-pad.t-pad.b);
+  const linePts = pts.map(p=>`${xScale(p.x).toFixed(1)},${yScale(p.y).toFixed(1)}`).join(' ');
+  const gridLines = [0,25,50,75,100].map(v=>{
+    const y = yScale(v).toFixed(1);
+    return `<line x1="${pad.l}" y1="${y}" x2="${w-pad.r}" y2="${y}" stroke="#e6e6e4" stroke-width="1"/>
+      <text x="${pad.l-6}" y="${+y+4}" font-size="10" fill="#6b6b68" text-anchor="end" font-family="Avenir, Arial, sans-serif">${v}%</text>`;
+  }).join('');
+  const dots = pts.map(p=>`<circle cx="${xScale(p.x).toFixed(1)}" cy="${yScale(p.y).toFixed(1)}" r="3.2" fill="#EF3E33"/>`).join('');
+  // sparse x-axis labels — first and last dated point only, to avoid crowding
+  // when there are many milestones (matches "simple chart" over a fully
+  // labeled axis, which would need every date to parse cleanly to look right)
+  const firstLabel = escapeHtml(pts.find(p=>p.dateLabel)?.dateLabel || '');
+  const lastLabel = escapeHtml([...pts].reverse().find(p=>p.dateLabel)?.dateLabel || '');
+  const axisLabels = `
+    ${firstLabel ? `<text x="${pad.l}" y="${h-10}" font-size="10" fill="#6b6b68" text-anchor="start" font-family="Avenir, Arial, sans-serif">${firstLabel}</text>` : ''}
+    ${lastLabel && lastLabel!==firstLabel ? `<text x="${w-pad.r}" y="${h-10}" font-size="10" fill="#6b6b68" text-anchor="end" font-family="Avenir, Arial, sans-serif">${lastLabel}</text>` : ''}
+  `;
+  return `<svg viewBox="0 0 ${w} ${h}" xmlns="http://www.w3.org/2000/svg">
+    <rect x="0" y="0" width="${w}" height="${h}" fill="#ffffff"/>
+    ${gridLines}
+    <polyline points="${linePts}" fill="none" stroke="#EF3E33" stroke-width="2.5"/>
+    ${dots}
+    ${axisLabels}
+  </svg>`;
+}
+
+/* Rasterizes an SVG string onto an offscreen canvas and resolves with a PNG
+   data URL (or null on failure) — pulled out as its own promise-returning
+   helper so both the live single-student preview and the multi-sibling
+   email-generation flow (which needs to rasterize several charts before the
+   draft is ready to copy) can share it. Inline SVG doesn't reliably paste
+   into Gmail as an image the way a raster image does, hence rasterizing at
+   all rather than just embedding the SVG markup directly. */
+function rasterizeSVGToPNG(svg, w, h, scale){
+  scale = scale || 2;
+  return new Promise(resolve=>{
+    try{
+      const canvas = document.createElement('canvas');
+      canvas.width = w*scale; canvas.height = h*scale;
+      const ctx = canvas.getContext('2d');
+      const img = new Image();
+      const svgBlob = new Blob([svg], {type:'image/svg+xml;charset=utf-8'});
+      const url = URL.createObjectURL(svgBlob);
+      img.onload = ()=>{
+        ctx.scale(scale, scale);
+        ctx.drawImage(img, 0, 0, w, h);
+        const dataUrl = canvas.toDataURL('image/png');
+        URL.revokeObjectURL(url);
+        resolve(dataUrl);
+      };
+      img.onerror = ()=>{ URL.revokeObjectURL(url); resolve(null); };
+      img.src = url;
+    }catch(e){
+      console.error('Chart rasterize failed:', e);
+      resolve(null);
+    }
+  });
+}
+
+function updateMsChart(){
+  const wrap = document.getElementById('msChartWrap');
+  const on = document.getElementById('exitChartToggle').checked;
+  const pts = buildMsChartPoints();
+  if(!on || pts.length < 2){
+    wrap.style.display = 'none';
+    wrap.innerHTML = '';
+    msChartDataUrl = null;
+    return;
+  }
+  wrap.style.display = 'block';
+  const svg = drawMsChartSVG(pts, 640, 220);
+  wrap.innerHTML = `<div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-soft);font-weight:700;margin-bottom:8px;">Score over time (preview)</div>${svg}`;
+  rasterizeSVGToPNG(svg, 640, 220).then(url=>{ msChartDataUrl = url; });
+}
+
+/* Chains the milestone table into the same kind of chronological prose as
+   the West Linn example: "started X with a Y% score... completed X with a
+   Z%, and started W with a V% score..." A repeated assessment name (a
+   retake) gets its own bridging sentence the first time it happens, and
+   "re-started" instead of "started" from then on. The last row is treated
+   as still in progress whenever its End date is blank, regardless of
+   whether an End score was filled in — that lets staff record a current,
+   still-improving score without implying the assessment is finished. */
+function buildExitNarrative(name, pr, msArr){
+  const rows = (msArr || milestones).filter(m=>m.name.trim());
+  if(!rows.length) return '';
+
+  const seenNames = new Set();
+  let text = '';
+  let mentionedRetakeBridge = false;
+  let introducedByPrev = false; // true when the previous row's completion clause already named this row's start
+
+  rows.forEach((m, i)=>{
+    const isRetake = seenNames.has(m.name.trim().toLowerCase());
+    seenNames.add(m.name.trim().toLowerCase());
+    const startScore = normalizePctLabel(m.startScore);
+    const endScore = normalizePctLabel(m.endScore);
+    const ongoing = !m.endDate.trim();
+
+    if(i===0){
+      const datePart = m.startDate.trim() ? ` in ${m.startDate.trim()}` : '';
+      const scorePart = startScore ? ` with a ${startScore} score` : '';
+      text += `When ${name} first came to Mathnasium${datePart}, ${pr.subj} started working on the ${m.name.trim()} curriculum${scorePart}. `;
+    } else if(!introducedByPrev){
+      // the previous row didn't chain into this one (e.g. it was left
+      // ongoing, or had no end date/score) — introduce this start on its own
+      if(isRetake && !mentionedRetakeBridge){
+        text += `At this point, we had ${pr.obj} revisit ${pr.poss} ${m.name.trim()} skills to refresh anything ${pr.subj} hadn't been using in a while. `;
+        mentionedRetakeBridge = true;
+      }
+      const verb = isRetake ? 're-started' : 'started';
+      const datePart = m.startDate.trim() ? ` in ${m.startDate.trim()}` : '';
+      const scorePart = startScore ? ` with a ${startScore} score` : '';
+      text += `${pr.subj[0].toUpperCase()+pr.subj.slice(1)} ${verb} ${m.name.trim()}${datePart}${scorePart}. `;
+    }
+
+    introducedByPrev = false;
+
+    if(!ongoing && m.endDate.trim()){
+      const scorePart = endScore ? ` with a ${endScore}` : '';
+      text += `By ${m.endDate.trim()}, ${pr.subj} completed ${m.name.trim()}${scorePart}`;
+      const next = rows[i+1];
+      if(next){
+        const nextIsRetake = seenNames.has(next.name.trim().toLowerCase());
+        if(nextIsRetake && !mentionedRetakeBridge){
+          text += `. At this point, we had ${pr.obj} revisit ${pr.poss} ${next.name.trim()} skills to refresh anything ${pr.subj} hadn't been using in a while`;
+          mentionedRetakeBridge = true;
+        }
+        const nextScore = normalizePctLabel(next.startScore);
+        const nextScorePart = nextScore ? ` with a ${nextScore} score` : '';
+        text += `, and ${nextIsRetake ? 're-started' : 'started'} ${next.name.trim()}${nextScorePart}. `;
+        introducedByPrev = true;
+      } else {
+        text += `. `;
+      }
+    } else if(ongoing && endScore){
+      text += `Since then, ${pr.subj} ${pr.has} been making steady progress up to ${pr.poss} current score of ${endScore}. `;
+    }
+
+    if(m.note && m.note.trim()){
+      let note = m.note.trim();
+      note = note[0].toUpperCase() + note.slice(1);
+      if(!/[.!?]$/.test(note)) note += '.';
+      text += `${note} `;
+    }
+  });
+
+  return text.trim();
+}
+
+/* Header/subject and full body for Exit Summary mode. Cancellation-section
+   fields left blank become an obvious [FILL IN: ...] placeholder rather
+   than silently disappearing from the draft. */
+/* ---------------------------------------------------------
+   EXIT SUMMARY — SIBLING MODE
+   Deliberately a separate, parallel system from the Progress Update /
+   RFA sibling infrastructure above (students/snapshotActiveStudent/etc.)
+   rather than sharing it — that system is wired tightly to `dataset` and
+   `extraCharts` from the PDF-parsing flow, and reusing it here risked
+   breaking a flow that already works. Shared-per-family fields (parent
+   name, sender name, chart toggle, cancellation section) live once at the
+   top level and are read directly from the DOM, same pattern the existing
+   sibling system uses for parentName/staffName. Per-sibling fields
+   (student name, pronoun, milestones, personal note) get snapshotted.
+--------------------------------------------------------- */
+let exitStudents = []; // [{id, meta:{studentName,pronoun,startedWhen,years,personalNote,milestones,milestoneCounter}}]
+let activeExitStudentId = null;
+let exitSiblingCounter = 0;
+let exitChartDataUrls = {}; // marker text -> PNG data URL, built fresh each Generate click in sibling mode
+
+function exitSiblingModeOn(){ return document.getElementById('exitSiblingModeToggle').checked; }
+
+function captureExitMeta(){
+  return {
+    studentName: document.getElementById('exitStudentName').value,
+    pronoun: document.getElementById('exitPronoun').value,
+    startedWhen: document.getElementById('exitStartedWhen').value,
+    years: document.getElementById('exitYears').value,
+    personalNote: document.getElementById('exitPersonalNote').value,
+    milestones: milestones.map(m=>({...m})), // deep-ish copy, avoid shared references across siblings
+    milestoneCounter
+  };
+}
+function restoreExitMeta(m){
+  document.getElementById('exitStudentName').value = m.studentName||'';
+  document.getElementById('exitPronoun').value = m.pronoun||'they';
+  document.getElementById('exitStartedWhen').value = m.startedWhen||'';
+  document.getElementById('exitYears').value = m.years||'';
+  document.getElementById('exitPersonalNote').value = m.personalNote||'';
+  milestones = (m.milestones||[]).map(x=>({...x}));
+  milestoneCounter = m.milestoneCounter||0;
+  if(!milestones.length) addMilestone();
+  renderMilestones();
+}
+function blankExitMeta(){
+  return {studentName:'', pronoun:'they', startedWhen:'', years:'', personalNote:'', milestones:[], milestoneCounter:0};
+}
+
+function snapshotActiveExitStudent(){
+  if(activeExitStudentId===null) return;
+  const s = exitStudents.find(s=>s.id===activeExitStudentId);
+  if(!s) return;
+  s.meta = captureExitMeta();
+}
+
+function loadExitStudent(id){
+  snapshotActiveExitStudent();
+  const s = exitStudents.find(s=>s.id===id);
+  if(!s) return;
+  activeExitStudentId = id;
+  restoreExitMeta(s.meta);
+  renderExitStudentTabs();
+}
+
+function addExitSibling(){
+  snapshotActiveExitStudent();
+  exitSiblingCounter++;
+  const s = {id: exitSiblingCounter, meta: blankExitMeta()};
+  exitStudents.push(s);
+  loadExitStudent(s.id);
+}
+
+function removeExitSibling(id){
+  exitStudents = exitStudents.filter(s=>s.id!==id);
+  if(!exitStudents.length){
+    document.getElementById('exitSiblingModeToggle').checked = false;
+    onExitSiblingModeChange();
+  } else if(activeExitStudentId===id){
+    activeExitStudentId = null;
+    loadExitStudent(exitStudents[0].id);
+  } else {
+    renderExitStudentTabs();
+  }
+}
+
+function renderExitStudentTabs(){
+  const host = document.getElementById('exitStudentTabsHost');
+  if(!exitSiblingModeOn() || !exitStudents.length){ host.style.display='none'; return; }
+  host.style.display='flex';
+  host.innerHTML = exitStudents.map(s=>{
+    const name = (s.id===activeExitStudentId ? document.getElementById('exitStudentName').value : s.meta.studentName) || `Sibling ${s.id}`;
+    const active = s.id===activeExitStudentId;
+    return `<span style="display:inline-flex;align-items:center;">
+      <button type="button" class="sibling-tab${active?' active':''}" data-id="${s.id}">${escapeAttr(name)}</button>
+      <button type="button" class="sibling-tab-remove" data-id="${s.id}" title="Remove this sibling">&times;</button>
+    </span>`;
+  }).join('') + `<button type="button" class="btn-secondary btn-sm" id="addExitSiblingBtn">+ Add sibling</button>`;
+  host.querySelectorAll('.sibling-tab').forEach(b=>b.addEventListener('click', e=>loadExitStudent(+e.currentTarget.dataset.id)));
+  host.querySelectorAll('.sibling-tab-remove').forEach(b=>b.addEventListener('click', e=>{ e.stopPropagation(); removeExitSibling(+e.currentTarget.dataset.id); }));
+  document.getElementById('addExitSiblingBtn').addEventListener('click', addExitSibling);
+}
+
+function onExitSiblingModeChange(){
+  const host = document.getElementById('exitStudentTabsHost');
+  if(exitSiblingModeOn()){
+    if(!exitStudents.length){
+      // fold whatever's currently entered into "Sibling 1" so nothing typed
+      // in already gets lost when switching sibling mode on
+      exitSiblingCounter++;
+      const s = {id: exitSiblingCounter, meta: captureExitMeta()};
+      exitStudents.push(s);
+      activeExitStudentId = s.id;
+    }
+    renderExitStudentTabs();
+  } else {
+    snapshotActiveExitStudent();
+    host.style.display = 'none';
+  }
+}
+document.getElementById('exitSiblingModeToggle').addEventListener('change', onExitSiblingModeChange);
+
+/* Header/subject and full body for Exit Summary mode, single student.
+   Cancellation-section fields left blank become an obvious [FILL IN: ...]
+   placeholder rather than silently disappearing from the draft. */
+const EXIT_CHART_MARKER_SINGLE = '[Chart image \u2014 inserted automatically when copied]';
+
+async function buildExitEmail(){
+  const name = document.getElementById('exitStudentName').value.trim() || 'the student';
+  const parent = document.getElementById('exitParentName').value.trim() || 'there';
+  const staff = document.getElementById('exitStaffName').value.trim() || '[Your name]';
+  const pr = pronounSet(document.getElementById('exitPronoun').value);
+  const center = CENTER_INFO[document.querySelector('input[name="emailCenter"]:checked').value];
+  const years = document.getElementById('exitYears').value.trim();
+
+  let body = `Hi ${parent}!\n\n`;
+
+  const narrative = buildExitNarrative(name, pr);
+  if(narrative) body += `${narrative}\n\n`;
+
+  const note = document.getElementById('exitPersonalNote').value.trim();
+  if(note){
+    body += `${note}\n\n`;
+  } else if(years){
+    body += `${name} has been a wonderful student during ${pr.poss} ${years} at the center. We're going to miss working with ${pr.obj}, and we have every confidence ${pr.subj} will keep finding success in math and beyond!\n\n`;
+  }
+
+  const pts = buildMsChartPoints();
+  exitChartDataUrls = {};
+  if(document.getElementById('exitChartToggle').checked && pts.length >= 2){
+    body += `${EXIT_CHART_MARKER_SINGLE}\n\n`;
+    // Rasterize fresh here rather than trusting the live preview's async
+    // render finished in time (it fires on every keystroke, but there's no
+    // guarantee it settled before Generate got clicked right after typing).
+    const svg = drawMsChartSVG(pts, 640, 220);
+    exitChartDataUrls[EXIT_CHART_MARKER_SINGLE] = await rasterizeSVGToPNG(svg, 640, 220);
+  }
+
+  if(document.getElementById('exitCancellationToggle').checked){
+    const eff = document.getElementById('exitEffectiveDate').value.trim() || '[FILL IN: effective cancellation date]';
+    const last = document.getElementById('exitLastChargeDate').value.trim() || '[FILL IN: last charge date]';
+    const referral = document.getElementById('exitReferralAmount').value.trim() || '$50';
+    body += `This is just confirmation that, per our conversation, ${name}'s contract will be cancelled effective ${eff}. You will not be charged on ${last}, or moving forward. Any unspent star cards will be recorded in ${pr.poss} profile to roll over if ${pr.subj} ever returns.\n\n`;
+    body += `We are so glad ${name} has enjoyed the program! If you refer a friend and they enroll, they will get ${referral} off enrollment and we'll send you a ${referral} thank-you gift card. No pressure, we're just grateful ${name} had such a great experience with math. :)\n\n`;
+  }
+
+  body += `If you have any additional thoughts or questions, please don't hesitate to reach out. We will miss ${pr.obj}!\n\n`;
+  body += `Best,\n${staff}\n${center.name}`;
+
+  return body;
+}
+
+/* Combined exit email covering every sibling tab, styled after the
+   Wren & Reed example: one shared greeting/closing, one "{name}'s
+   Progress" section per sibling. Async because it needs to rasterize a
+   chart PNG per sibling before the draft (and its clipboard copy) are
+   ready \u2014 charts for tabs that aren't currently open in the DOM don't
+   exist yet, unlike the single-student flow where the live preview
+   already has one ready. */
+async function buildExitSiblingEmail(){
+  snapshotActiveExitStudent(); // make sure the currently-open tab's edits are included
+
+  const parent = document.getElementById('exitParentName').value.trim() || 'there';
+  const staff = document.getElementById('exitStaffName').value.trim() || '[Your name]';
+  const center = CENTER_INFO[document.querySelector('input[name="emailCenter"]:checked').value];
+  const chartOn = document.getElementById('exitChartToggle').checked;
+
+  const kids = exitStudents.map(s=>({
+    id: s.id,
+    name: firstNameOf(s.meta.studentName) || 'the student',
+    pr: pronounSet(s.meta.pronoun || 'they'),
+    milestones: s.meta.milestones,
+    note: (s.meta.personalNote||'').trim(),
+    years: (s.meta.years||'').trim()
+  }));
+  const names = kids.map(k=>k.name);
+
+  let body = `Hi ${parent}!\n\n`;
+  body += `Here is a total progress recap of everything ${listJoin(names)} accomplished with us!\n\n`;
+
+  const chartMap = {};
+  for(const k of kids){
+    body += `${k.name}'s Progress\n\n`;
+    const narrative = buildExitNarrative(k.name, k.pr, k.milestones);
+    if(narrative) body += `${narrative}\n\n`;
+    if(k.note){
+      body += `${k.note}\n\n`;
+    } else if(k.years){
+      body += `${k.name} has been a wonderful student during ${k.pr.poss} ${k.years} at the center. We're going to miss working with ${k.pr.obj}, and we have every confidence ${k.pr.subj} will keep finding success in math and beyond!\n\n`;
+    }
+    const pts = buildMsChartPoints(k.milestones);
+    if(chartOn && pts.length >= 2){
+      const marker = `[Chart image: ${k.name} \u2014 inserted automatically when copied]`;
+      body += `${marker}\n\n`;
+      const svg = drawMsChartSVG(pts, 640, 220);
+      chartMap[marker] = await rasterizeSVGToPNG(svg, 640, 220);
+    }
+  }
+
+  if(document.getElementById('exitCancellationToggle').checked){
+    const eff = document.getElementById('exitEffectiveDate').value.trim() || '[FILL IN: effective cancellation date]';
+    const last = document.getElementById('exitLastChargeDate').value.trim() || '[FILL IN: last charge date]';
+    const referral = document.getElementById('exitReferralAmount').value.trim() || '$50';
+    const multi = kids.length > 1;
+    const contractWord = multi ? 'contracts' : "contract";
+    const namesPoss = `${listJoin(names)}'s`;
+    body += `This is just confirmation that, per our conversation, ${namesPoss} ${contractWord} will be cancelled effective ${eff}. You will not be charged on ${last}, or moving forward. Any unspent star cards will be recorded in ${multi?'their':kids[0].pr.poss} profile${multi?'s':''} to roll over if ${multi?'they':kids[0].pr.subj} ever return${multi?'':'s'}.\n\n`;
+    body += `We are so glad ${listJoin(names)} ${multi?'have':'has'} enjoyed the program! If you refer a friend and they enroll, they will get ${referral} off enrollment and we'll send you a ${referral} thank-you gift card. No pressure, we're just grateful ${multi?'they':kids[0].name} had such a great experience with math. :)\n\n`;
+  }
+
+  body += `If you have any additional thoughts or questions, please don't hesitate to reach out. We will miss ${kids.length>1?'them':kids[0].pr.obj}!\n\n`;
+  body += `Best,\n${staff}\n${center.name}`;
+
+  exitChartDataUrls = chartMap;
+  return body;
+}
+
+function buildExitEmailHeader(){
+  if(exitSiblingModeOn() && exitStudents.length > 1){
+    snapshotActiveExitStudent();
+    const names = exitStudents.map(s => firstNameOf(s.meta.studentName) || 'Student');
+    return `${listJoin(names)} - Total Progress Recap`;
+  }
+  const name = document.getElementById('exitStudentName').value.trim() || 'the student';
+  return `${name} - Total Progress Recap`;
+}
 
 /* Center-based defaults for the RFA toggles: MEV schedules through AppointyM
    and sends a Learning Plan; West Linn mentions the day-at-Mathnasium
@@ -2746,7 +3463,8 @@ const CENTER_INFO = {
     address: '21900 Willamette Dr, West Linn, Oregon 97068',
     email: 'westlinn@mathnasium.com',
     scoreVoice: 'clinical', // "indicates gaps but solid fundamentals" style
-    progressTrigger: 'assessment' // WL's cadence: reassess every N concepts, independent of LP completion
+    progressTrigger: 'assessment', // WL's cadence: reassess every N concepts, independent of LP completion
+    includeIntroLine: true // "This is {staff} with Mathnasium." opener on Progress Update emails
   },
   MEV: {
     name: 'Mathnasium of East Vancouver',
@@ -2755,7 +3473,8 @@ const CENTER_INFO = {
     address: '16020 SE Mill Plain Blvd #117, Vancouver, Washington 98684',
     email: 'eastvancouver@mathnasium.com',
     scoreVoice: 'warm', // "phenomenal!" style
-    progressTrigger: 'learningPlan' // MEV's cadence: student finishes the current Learning Plan, then gets reassessed
+    progressTrigger: 'learningPlan', // MEV's cadence: student finishes the current Learning Plan, then gets reassessed
+    includeIntroLine: false // MEV templates skip the "This is {staff} with Mathnasium." opener
   }
 };
 // standard is 40-70% on an initial assessment, regardless of center
@@ -3093,7 +3812,7 @@ function generateSiblingProgressEmail(){
   const names = kids.map(k=>k.name);
 
   let body = `Hi ${parent}!\n\n`;
-  body += `This is ${staff} with Mathnasium. ${listJoin(names)} recently completed a progress check, and I wanted to update you on their progress!\n\n`;
+  body += `${center.includeIntroLine ? `This is ${staff} with Mathnasium. ` : ''}${listJoin(names)} recently completed a progress check, and I wanted to update you on their progress!\n\n`;
 
   kids.forEach(k=>{
     body += `${k.name}'s Progress Check\n\n`;
@@ -3126,8 +3845,16 @@ function buildEmailHeader(){
   return `${label} for ${names.join(' + ')} at Mathnasium`;
 }
 
-document.getElementById('genBtn').addEventListener('click', ()=>{
-  const isRfa = document.querySelector('input[name="emailMode"]:checked').value === 'rfa';
+document.getElementById('genBtn').addEventListener('click', async ()=>{
+  const mode = document.querySelector('input[name="emailMode"]:checked').value;
+  if(mode === 'exit'){
+    document.getElementById('emailHeaderOut').value = buildExitEmailHeader();
+    document.getElementById('emailOut').value = (exitSiblingModeOn() && exitStudents.length > 1)
+      ? await buildExitSiblingEmail()
+      : await buildExitEmail();
+    return;
+  }
+  const isRfa = mode === 'rfa';
   document.getElementById('emailHeaderOut').value = buildEmailHeader();
   if(isRfa){
     if(siblingModeOn() && students.length > 1){
@@ -3231,9 +3958,9 @@ document.getElementById('genBtn').addEventListener('click', ()=>{
     if(isCleanLevelJump){
       const prevLabelClean = forParentFacing(bd[0].name);
       const currLabelClean = forParentFacing(bd[1].name);
-      body += `This is ${staff} with Mathnasium. ${student} recently completed ${pr.poss} ${prevLabelClean} assessment and scored ${bd[0].currScore} overall! Since ${pr.subj} performed so well, we gave ${pr.obj} our ${currLabelClean} assessment for ${pr.poss} next progress check. Here's the full breakdown of both. A skill-by-skill breakdown is attached to this email.\n\n`;
+      body += `${center.includeIntroLine ? `This is ${staff} with Mathnasium. ` : ''}${student} recently completed ${pr.poss} ${prevLabelClean} assessment and scored ${bd[0].currScore} overall! Since ${pr.subj} performed so well, we gave ${pr.obj} our ${currLabelClean} assessment for ${pr.poss} next progress check. Here's the full breakdown of both. A skill-by-skill breakdown is attached to this email.\n\n`;
     } else {
-      body += `This is ${staff} with Mathnasium. ${student} recently completed ${listJoin(names)} assessments, and I wanted to share a full breakdown of ${pr.poss} results. A skill-by-skill breakdown is attached to this email.\n\n`;
+      body += `${center.includeIntroLine ? `This is ${staff} with Mathnasium. ` : ''}${student} recently completed ${listJoin(names)} assessments, and I wanted to share a full breakdown of ${pr.poss} results. A skill-by-skill breakdown is attached to this email.\n\n`;
     }
 
     bd.forEach((b,bi)=>{
@@ -3266,9 +3993,10 @@ document.getElementById('genBtn').addEventListener('click', ()=>{
       body += `\n`;
     });
   } else {
+    const introPrefix = center.includeIntroLine ? `This is ${staff} with Mathnasium. ` : '';
     body += center.progressTrigger === 'learningPlan'
-      ? `This is ${staff} with Mathnasium. ${student} recently completed ${pr.poss} Learning Plan, so it was time for a reassessment, and I wanted to share an update on ${pr.poss} progress! `
-      : `This is ${staff} with Mathnasium. ${student} recently completed ${assessmentPhrase}, and I wanted to share an update on ${pr.poss} progress! `;
+      ? `${introPrefix}${student} recently completed ${pr.poss} Learning Plan, so it was time for a reassessment, and I wanted to share an update on ${pr.poss} progress! `
+      : `${introPrefix}${student} recently completed ${assessmentPhrase}, and I wanted to share an update on ${pr.poss} progress! `;
     if(!preMode && prevPlan){
       body += `${pr.subj[0].toUpperCase()+pr.subj.slice(1)} had been working on ${pr.poss} ${prevPlan} lesson plan since the last update. `;
     }
@@ -3311,12 +4039,22 @@ function escapeHtml(s){
 
 /* Turns the plain-text email body into clean HTML: blank-line-separated
    blocks become paragraphs, and a block whose lines all start with the
-   bullet character becomes a real <ul><li> list Gmail will render as one. */
-function emailTextToHtml(text){
+   bullet character becomes a real <ul><li> list Gmail will render as one.
+   Any block matching a key in chartMap (the Exit Summary chart marker,
+   single-student or per-sibling) gets swapped for an actual <img> tag, so
+   the chart pastes into Gmail as a real embedded image rather than the
+   placeholder text. */
+function emailTextToHtml(text, chartMap){
   const blocks = text.replace(/\r\n/g,'\n').split(/\n\s*\n/);
   const html = blocks.map(block=>{
     const lines = block.split('\n').filter(l=>l.length);
     if(!lines.length) return '';
+    if(lines.length===1 && chartMap && Object.prototype.hasOwnProperty.call(chartMap, lines[0].trim())){
+      const url = chartMap[lines[0].trim()];
+      return url
+        ? `<img src="${url}" alt="Score over time" style="max-width:640px;width:100%;height:auto;display:block;margin:0 0 1em 0;">`
+        : `<p style="margin:0 0 1em 0;">${escapeHtml(lines[0])}</p>`;
+    }
     if(lines.every(l=>/^\s*\u2022\s?/.test(l))){
       const items = lines.map(l=>`<li>${escapeHtml(l.replace(/^\s*\u2022\s?/,''))}</li>`).join('');
       return `<ul style="margin:0 0 1em 0;padding-left:20px;">${items}</ul>`;
@@ -3333,7 +4071,8 @@ document.getElementById('copyBtn').addEventListener('click', async ()=>{
 
   if(navigator.clipboard && window.ClipboardItem){
     try{
-      const html = emailTextToHtml(ta.value);
+      const mode = document.querySelector('input[name="emailMode"]:checked').value;
+      const html = emailTextToHtml(ta.value, mode==='exit' ? exitChartDataUrls : null);
       await navigator.clipboard.write([
         new ClipboardItem({
           'text/plain': new Blob([ta.value], {type:'text/plain'}),
