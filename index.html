@@ -1227,6 +1227,20 @@ async function parseLearningPlanReport(file){
       if(LP_LEGEND_RE.test(text)) continue; // the icon legend line itself, not a topic
       if(headerLines.has(text)) continue; // a repeat of page 1's title/subtitle/name block, not a topic
 
+      // Real topic names are short label phrases (e.g. "Order of Operations
+      // - PEMDAS", "Converting U.S. Customary Units") - never a full sentence
+      // boundary partway through (a period, a space, then a capitalized word
+      // followed by a lowercase word - "Our goal...", "This report..."). A
+      // reassurance blurb ("...Mathnasium journey. Our goal is to meet them
+      // where they are...") has shown up loose in the topic list in practice
+      // without matching any of the specific stop conditions above, since
+      // it's not a repeated header and doesn't start a row with any of the
+      // known intro/footer phrases. This is a general catch for that whole
+      // class of stray prose, not just this one known phrase - the specific
+      // phrase check right after is kept anyway for clarity/documentation.
+      if(/\.\s+[A-Z][a-z]+\s+[a-z]/.test(text)) continue;
+      if(/Mathnasium journey/i.test(text)) continue;
+
       const rowY = row.reduce((s,i)=>s+i.y,0)/row.length;
       const [vx, vy] = viewport.convertToViewportPoint(561, rowY); // 561 = icon column midpoint, pdf-space
       const sampleSize = 22 * scale; // covers the ~18pt icon fully, including a hollow icon's thin ring
