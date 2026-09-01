@@ -773,6 +773,31 @@ Integer Subtraction/Multiplication and Division with Two Numbers"></textarea>
 pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
 
 /* ---------------------------------------------------------
+   FEATURE FLAGS
+   This tool is a single static file with no backend, so there's no way to
+   flip a switch and have it apply live to every staff member's browser at
+   once - whatever's in the deployed file IS the state everyone sees. What
+   this gives instead: one place to mark an in-progress feature as
+   staff-hidden (edit the flag, redeploy, done), plus a URL-based override
+   so it can still be tested on the real live site without exposing it to
+   anyone else or needing a separate dev copy of the file.
+
+   To preview a hidden feature yourself: add ?preview=exitSummary (or
+   ?preview=all) to the deployed URL for that one visit. It only affects
+   your browser tab for that page load - nothing is saved, nothing changes
+   for anyone else, and reloading without the parameter goes back to normal.
+--------------------------------------------------------- */
+const FEATURE_FLAGS = {
+  exitSummary: false // flip to true and redeploy once it's ready for staff use
+};
+function featureEnabled(name){
+  const params = new URLSearchParams(location.search);
+  const preview = params.get('preview');
+  if(preview === name || preview === 'all') return true;
+  return !!FEATURE_FLAGS[name];
+}
+
+/* ---------------------------------------------------------
    STATE
 --------------------------------------------------------- */
 let filesChosen = []; // array of File objects, any mix of chart/report PDFs
@@ -1268,6 +1293,175 @@ async function parseLearningPlanReport(file){
     }
   }
   return {studentName, statusTopics};
+}
+
+/* ---------------------------------------------------------
+   NUMERICAL FLUENCY CHECKUP (tiered checkbox grid)
+   A different, newer Numerical Fluency report format from the percentage-bar
+   chart the tool already reads - "Mathnasium Checkup Numerical Fluency -
+   Addition and Subtraction Facts" / "...Multiplication and Division Facts".
+   Each skill area is scored into one of four levels (No Knowledge /
+   Awareness / Competency / Mastery) as a small checkbox grid, and like the
+   Learning Plan Report's status icons, the actual result has no text
+   equivalent anywhere in the PDF - it's a hand-drawn colored checkmark
+   glyph, color-coded per level. Verified against three real exports (all
+   four colors, both subjects) before shipping - see calibration notes below.
+--------------------------------------------------------- */
+const NF_LEVELS = ['No Knowledge','Awareness','Competency','Mastery'];
+// Colors sampled directly from real rendered exports. Checkmarks are hand-
+// drawn (slightly rough edges/anti-aliasing), so classification uses
+// Euclidean distance to the nearest signature rather than an exact match.
+const NF_LEVEL_COLORS = {
+  'No Knowledge': [220,60,60],   // red
+  'Awareness':    [235,150,50],  // orange
+  'Competency':   [245,235,60],  // yellow
+  'Mastery':      [35,160,55]    // green
+};
+// The checkbox for a column sits well right of that column header's own
+// text - not centered under it - because the header label lengths vary
+// ("No Knowledge" vs "Mastery") while the checkbox itself is centered in a
+// fixed-width table cell. These are PDF-space offsets (points, not pixels),
+// so they hold regardless of render scale - measured directly against real
+// exports rather than assumed, since a naive "under the header" guess was
+// off by as much as 75px at 3x scale in testing.
+const NF_LEVEL_OFFSETS = {'No Knowledge':30.3,'Awareness':23.9,'Competency':29.9,'Mastery':17.6};
+
+function nfClassifyColor([r,g,b]){
+  let best=null, bestD=Infinity;
+  for(const [level, sig] of Object.entries(NF_LEVEL_COLORS)){
+    const d = Math.sqrt((r-sig[0])**2+(g-sig[1])**2+(b-sig[2])**2);
+    if(d<bestD){ bestD=d; best=level; }
+  }
+  return {best, bestD};
+}
+
+async function parseNfChecklistReport(file){
+  const buf = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({data:buf}).promise;
+  const page = await pdf.getPage(1); // this report type is always a single page
+  const scale = 3;
+  const viewport = page.getViewport({scale});
+  const canvas = document.createElement('canvas');
+  canvas.width = viewport.width;
+  canvas.height = viewport.height;
+  const ctx = canvas.getContext('2d');
+  await page.render({canvasContext: ctx, viewport}).promise;
+
+  const textContent = await page.getTextContent();
+  const items = textContent.items.map(it => ({text: it.str, x: it.transform[4], y: it.transform[5]})).filter(it => it.text.trim());
+  items.sort((a,b)=> b.y - a.y || a.x - b.x);
+  const TOL = 6;
+  let rows = [], current = [], currentY = null;
+  items.forEach(it=>{
+    if(currentY===null || Math.abs(it.y-currentY) <= TOL){
+      current.push(it);
+      currentY = current.reduce((s,i)=>s+i.y,0)/current.length;
+    } else { rows.push(current); current=[it]; currentY=it.y; }
+  });
+  if(current.length) rows.push(current);
+  rows.forEach(r=>r.sort((a,b)=>a.x-b.x));
+
+  const joinRow = r => r.map(i=>i.text).join(' ').replace(/\s+/g,' ').trim();
+
+  const titleRow = rows.find(r => /^Mathnasium Checkup Numerical Fluency/i.test(joinRow(r)));
+  const subjectMatch = titleRow && joinRow(titleRow).match(/Numerical Fluency\s*-\s*(.+)$/i);
+  const subject = subjectMatch ? subjectMatch[1].trim() : 'Numerical Fluency';
+
+  let studentName = '';
+  const studentRow = rows.find(r => /^Student:/i.test(joinRow(r)));
+  if(studentRow){
+    const m = joinRow(studentRow).match(/^Student:\s*(.+)$/i);
+    if(m) studentName = m[1].trim();
+  }
+  let dateStr = '';
+  const dateRow = rows.find(r => /^Date:/i.test(joinRow(r)));
+  if(dateRow){
+    const m = joinRow(dateRow).match(/(\d{1,2}\/\d{1,2}\/\d{4})/);
+    if(m) dateStr = m[1];
+  }
+
+  const headerRow = rows.find(r => NF_LEVELS.every(lv => r.some(i=>i.text===lv)));
+  if(!headerRow) return {studentName, date:dateStr, subject, skills:[]};
+  const headerX = {};
+  NF_LEVELS.forEach(lv => { headerX[lv] = headerRow.find(i=>i.text===lv).x; });
+
+  // Every skill area has exactly two example problems - a reliable invariant
+  // confirmed across real exports - but how those two examples (and the
+  // skill's own name) get split across raw text rows varies by section:
+  // some skills put the name on the same row as example #1, with example #2
+  // alone on the row below; others fit the name plus BOTH examples on a
+  // single row (short "Prerequisite Skills" entries); others still center
+  // the name as its own row, sandwiched between the two example rows. A
+  // fixed "every skill is N rows" assumption breaks depending on which
+  // pattern a given row is in - instead, walk rows in order and start a new
+  // skill block whenever the previous block has already accounted for both
+  // of its examples, using example-count (not row *position*) as the
+  // reliable per-skill boundary. Skill-name text always sits well left of
+  // the Examples column (label x maxes out ~80pt in practice, Examples text
+  // starts past 200pt) - 150 is a safe, generously-margined cutoff.
+  const headerIdx = rows.indexOf(headerRow);
+  const footerIdx = rows.findIndex(r => /^Mathnasium of /i.test(joinRow(r)));
+  const contentRows = rows.slice(headerIdx+1, footerIdx > 0 ? footerIdx : rows.length)
+    .filter(r => !/^(Tier \d+|Prerequisite Skills|Multiplication and Division Facts)$/i.test(joinRow(r)));
+
+  const blocks = [];
+  let cur = null, exCount = 0;
+  contentRows.forEach(row=>{
+    const labelItems = row.filter(it=>it.x<150);
+    const exampleCount = row.filter(it=>it.x>=150).length;
+    if(cur === null || exCount >= 2){
+      cur = {labelParts: [], rows: []};
+      blocks.push(cur);
+      exCount = 0;
+    }
+    if(labelItems.length) cur.labelParts.push(labelItems.map(i=>i.text).join(' '));
+    cur.rows.push(row);
+    exCount += exampleCount;
+  });
+
+  // Which row within a block actually aligns with the drawn checkbox varies
+  // by the same three layout patterns above (sometimes the label row, more
+  // often whichever example row visually anchors the cell) - rather than
+  // hardcode which one, test every row's Y in the block and keep whichever
+  // gives the clearest signal (most colored pixels found), since a
+  // continuation row with no real checkbox nearby reliably returns weak or
+  // no votes at all.
+  function detectLevelAtY(y){
+    let winner = null, winnerCount = 0;
+    NF_LEVELS.forEach(level=>{
+      const [vx, vy] = viewport.convertToViewportPoint(headerX[level] + NF_LEVEL_OFFSETS[level], y);
+      const boxSize = 28; // covers the ~14pt checkbox at 3x scale with margin for hand-drawn jitter
+      const px0 = Math.round(vx - boxSize/2);
+      const py0 = Math.round(vy - boxSize/2);
+      if(px0 < 0 || py0 < 0 || px0+boxSize > canvas.width || py0+boxSize > canvas.height) return;
+      const region = ctx.getImageData(px0, py0, boxSize, boxSize).data;
+      const votes = {};
+      for(let i=0; i<region.length; i+=4){
+        const r_=region[i], g_=region[i+1], b_=region[i+2];
+        if(r_>240 && g_>240 && b_>240) continue; // white
+        if(Math.abs(r_-g_)<8 && Math.abs(g_-b_)<8) continue; // grey (unchecked box outline)
+        const {best, bestD} = nfClassifyColor([r_,g_,b_]);
+        if(bestD < 60) votes[best] = (votes[best]||0)+1;
+      }
+      const [topLevel, topCount] = Object.entries(votes).sort((a,b)=>b[1]-a[1])[0] || [null,0];
+      if(topCount >= 3 && topLevel === level && topCount > winnerCount){ winner = level; winnerCount = topCount; }
+    });
+    return {winner, winnerCount};
+  }
+
+  const skills = [];
+  blocks.forEach(block=>{
+    const name = block.labelParts.join(' ').replace(/\s+/g,' ').trim();
+    if(!name) return;
+    let best = {winner:null, winnerCount:0};
+    block.rows.forEach(row=>{
+      const result = detectLevelAtY(row[0].y);
+      if(result.winnerCount > best.winnerCount) best = result;
+    });
+    skills.push({name, level: best.winner || 'Not checked'});
+  });
+
+  return {studentName, date:dateStr, subject, skills};
 }
 
 // Skill-number list column tops out well under this x; topic names / percents start after it.
@@ -1863,7 +2057,41 @@ document.getElementById('parseBtn').addEventListener('click', async ()=>{
     // Learning Plan Reports don't belong in the assessment table at all - pull
     // them out here and use them to auto-fill Step 4 instead, below.
     const lpReportFiles = classified.filter(c => c.kind === 'learningPlan');
-    const assessmentFiles = classified.filter(c => c.kind !== 'learningPlan');
+    // Numerical Fluency checkups are always an add-on, never the main
+    // assessment (same principle as Computation/Extensions) - route straight
+    // to their own Additional Assessment card rather than into the main
+    // narrative/chart grouping below, which doesn't know what to do with a
+    // "level per skill" result shape.
+    const nfChecklistFiles = classified.filter(c => c.kind === 'nfChecklist');
+    const assessmentFiles = classified.filter(c => c.kind !== 'learningPlan' && c.kind !== 'nfChecklist');
+
+    const summary = []; // lines describing what got sorted where
+
+    nfChecklistFiles.forEach(c=>{
+      const label = /Multiplication/i.test(c.nfSubject)
+        ? 'Numerical Fluency Multiplication and Division'
+        : 'Numerical Fluency Addition and Subtraction';
+      // Existing card for the same subject (e.g. two NF checkups uploaded
+      // together for Add/Sub and Mult/Div) - drop into it instead of adding
+      // a duplicate blank one.
+      let card = extraCharts.find(ec => ec.label === label);
+      if(!card){
+        extraCounter++;
+        card = {id: extraCounter, label, prevScore:'', score:'', topics:[], _narrativeCurr:null,
+                currFileName: c.file.name, prevFileName:'', _uploadExpanded:false};
+        extraCharts.push(card);
+      } else {
+        card.currFileName = c.file.name;
+      }
+      card.topics = c.nfSkills.map(s=>({
+        name: s.name, curr: s.level, prev: '',
+        checked: s.level === 'Mastery' // only genuine strengths mention-worthy by default
+      }));
+      const unclear = c.nfSkills.filter(s=>s.level==='Not checked').length;
+      summary.push(unclear
+        ? `Additional: <strong>${escapeAttr(label)}</strong> checkup read (${c.nfSkills.length} skill areas, ${unclear} couldn't be read confidently \u2014 double-check those rows) &mdash; added as its own card below.`
+        : `Additional: <strong>${escapeAttr(label)}</strong> checkup read (${c.nfSkills.length} skill areas, all levels detected) &mdash; added as its own card below.`);
+    });
 
     // Which detected names are eligible to compete for the "main" comparison
     // slot vs. always landing in Additional Assessments. Computation, HS
@@ -1874,7 +2102,14 @@ document.getElementById('parseBtn').addEventListener('click', async ()=>{
     // as a main assessment in rare cases, but that's rare enough that it's
     // not worth auto-detecting; staff can move a card manually if that
     // specific case comes up.
-    const isMainNarrative = c => c.kind==='narrative' && c.assessmentNames.some(n=>/^(Level \d|Great Foundations|Algebra Readiness(?! Extension)|Algebra 1|Algebra 2|Geometry Readiness|Geometry(?! Readiness)|Geometry w(?:ith)? Proofs|HMM Fundamental|HMM Trigonometry|HMM Linear|HMM Quadratic|HMM Advanced|Trigonometry|Precalculus|Integrated Math 1|Integrated Math 2|SAT Basic|SAT Advanced)/i.test(n));
+    const isMainNarrative = c => c.kind==='narrative' && c.assessmentNames.some(n=>MAIN_ELIGIBLE_RE.test(n));
+    // A file's FIRST main-eligible name, not just its first name positionally
+    // — a single narrative-report PDF with two score cards (e.g. "Level 6
+    // Extension" + "Level 7" administered the same day) lists whichever card
+    // happens to render on the left first in assessmentNames, which is not
+    // reliably the one that should drive the email's main story. Falls back
+    // to positional [0] for the ordinary case where a file only has one name.
+    const mainNameOf = c => c.assessmentNames.find(n=>MAIN_ELIGIBLE_RE.test(n)) || c.assessmentNames[0] || 'Assessment';
     const byDate = (a,b) => parseFlexDate(a.dateRaw) - parseFlexDate(b.dateRaw);
     // If 2+ files being compared as prev/curr share the same date (or no date) and none
     // of them had a date typed in by hand, we genuinely can't tell which is older - flag
@@ -1890,8 +2125,35 @@ document.getElementById('parseBtn').addEventListener('click', async ()=>{
     if(narrativeMain.length){ mainPool = narrativeMain; mainKind = 'narrative'; }
     else if(chartFiles.length){ mainPool = chartFiles; mainKind = 'chart'; }
 
-    const summary = []; // lines describing what got sorted where
     let leftovers = []; // classified files not used for the main slot
+
+    // A single narrative file can carry TWO score cards (parseTwoCardScores)
+    // when Radius ran two assessments the same day - one main, one an add-on
+    // riding along (like Olivia Hiatt's "Level 6 Extension" + "Level 7" in
+    // one PDF). The add-on's score is clean, known data (its own card).
+    // Its MASTERED topics get split out too, wherever ASSESSMENT_TOPIC_REFERENCE
+    // can confidently attribute a whole category to it (matching Ashley's
+    // real 0% reference exports) - anything ambiguous stays out, left for
+    // staff to add by hand, rather than guessing.
+    narrativeMain.forEach(c=>{
+      const top = c.narrative && c.narrative.topAssessments;
+      if(!top || top.length < 2) return;
+      const buckets = bucketCategoriesByAssessment(c);
+      top.forEach(ta=>{
+        if(MAIN_ELIGIBLE_RE.test(ta.name)) return; // this is the main identity, not a leftover
+        const ownedCats = buckets[ta.name] || [];
+        const masteredTopics = ownedCats.flatMap(cat=>cat.mastered);
+        extraCounter++;
+        extraCharts.push({
+          id: extraCounter, label: ta.name, prevScore:'', score: fracLabelToPct(ta.num, ta.den),
+          topics: masteredTopics.map(name=>({name, curr:'Mastered', prev:'', checked:true})),
+          _narrativeCurr:null, currFileName: c.file.name, prevFileName:'', _uploadExpanded:false
+        });
+        summary.push(masteredTopics.length
+          ? `Additional: <strong>${escapeAttr(ta.name)}</strong> (${fracLabelToPct(ta.num, ta.den)}) was on the same report as ${escapeAttr(mainNameOf(c))} &mdash; added as its own card below, with ${masteredTopics.length} mastered topic(s) auto-matched to it by category size. Double-check they landed right.`
+          : `Additional: <strong>${escapeAttr(ta.name)}</strong> (${fracLabelToPct(ta.num, ta.den)}) was on the same report as ${escapeAttr(mainNameOf(c))} &mdash; added as its own card below. No mastered topics could be confidently matched to it yet; add any worth mentioning by hand.`);
+      });
+    });
 
     // Narrative files with more than one DISTINCT assessment name (a grade-
     // level jump like Level 4 -> Level 5, or a same-day battery of totally
@@ -1902,13 +2164,13 @@ document.getElementById('parseBtn').addEventListener('click', async ()=>{
     // name gets its own breakdown (its own score, its own mastered topics),
     // and the email covers every one of them.
     const distinctNarrativeNames = mainKind === 'narrative'
-      ? new Set(narrativeMain.map(c=>c.assessmentNames[0] || 'Assessment'))
+      ? new Set(narrativeMain.map(c=>mainNameOf(c)))
       : new Set();
 
     if(mainKind === 'narrative' && distinctNarrativeNames.size > 1){
       const byName = new Map();
       narrativeMain.forEach(c=>{
-        const name = c.assessmentNames[0] || 'Assessment';
+        const name = mainNameOf(c);
         if(!byName.has(name)) byName.set(name, []);
         byName.get(name).push(c);
       });
@@ -1916,6 +2178,45 @@ document.getElementById('parseBtn').addEventListener('click', async ()=>{
       const breakdown = [];
       const allCategories = [];
       const usedFiles = [];
+      // When a file carries multiple score cards (see the addon-routing pass
+      // above), its own "Skills Mastered N/M P%" footer is the COMBINED
+      // total across every card on that page, not any single one of them.
+      // Olivia Hiatt's file, for example, footers at 35/58 (60%) - the sum
+      // of Level 6 Extension's 5/13 AND Level 7's 30/45 - which is wrong for
+      // either identity individually. Prefer that specific card's own score
+      // from topAssessments whenever one's available.
+      const ownScoreFor = (file, name) => {
+        const top = file.narrative && file.narrative.topAssessments;
+        if(!top || top.length < 2) return null;
+        // topAssessments names come straight off the PDF's score cards ("Level
+        // 7"); the grouping name here has already been through
+        // describeAssessmentName ("Level 7 (core skills through 7th grade)"),
+        // which always APPENDS a parenthetical rather than changing the base
+        // name - strip it back off before comparing, or this never matches
+        // and silently falls back to the wrong combined score.
+        const stripParen = s => s.replace(/\s*\([^)]*\)\s*$/, '').trim().toLowerCase();
+        const target = stripParen(name);
+        const match = top.find(t=>stripParen(t.name) === target);
+        return match ? fracLabelToPct(match.num, match.den) : null;
+      };
+      // When a file carries multiple score cards, foldNarrativeSingle's
+      // mastered-topics list is otherwise unfiltered across every card on
+      // the page - so a mastered Level 6 Extension geometry skill would show
+      // up as if it were a mastered Level 7 skill. Re-bucket by the same
+      // category-size match as the Additional Assessment card above, and
+      // keep only what's actually this identity's own.
+      const ownFoldedCategories = (file, folded) => {
+        const top = file.narrative && file.narrative.topAssessments;
+        if(!top || top.length < 2) return folded.categories;
+        const buckets = bucketCategoriesByAssessment(file);
+        const mainRaw = (top.find(t=>MAIN_ELIGIBLE_RE.test(t.name)) || {}).name;
+        const ownedCats = buckets[mainRaw] || [];
+        const masteredTopics = ownedCats.flatMap(cat=>cat.mastered);
+        if(masteredTopics.length){
+          return [{name:'Mastered Concepts', topics: masteredTopics.map(nm=>({name:nm, prev:null, curr:'Mastered'}))}];
+        }
+        return [{name:'Skill Areas', topics: ownedCats.map(c=>({name:c.name, prev:null, curr:fracLabelToPct(c.num, c.den)}))}];
+      };
       byName.forEach((files, name)=>{
         files.sort(byDate);
         const use = files.length <= 2 ? files : [files[0], files[files.length-1]];
@@ -1929,13 +2230,13 @@ document.getElementById('parseBtn').addEventListener('click', async ()=>{
           entry = {
             name,
             prevScore: fracLabelToPct(only.narrative.initialOverall.num, only.narrative.initialOverall.den),
-            currScore: folded.currScore, isComparison: true, dateRaw: only.dateRaw
+            currScore: ownScoreFor(only, name) || folded.currScore, isComparison: true, dateRaw: only.dateRaw
           };
-          folded.categories.forEach(cat=>cat.topics.forEach(t=>allCategories.push({...t, _assessment:name})));
+          ownFoldedCategories(only, folded).forEach(cat=>cat.topics.forEach(t=>allCategories.push({...t, _assessment:name})));
         } else if(use.length === 1){
           const folded = foldNarrativeSingle(use[0].narrative);
-          entry = {name, prevScore:'', currScore: folded.currScore, isComparison:false, dateRaw: use[0].dateRaw};
-          folded.categories.forEach(cat=>cat.topics.forEach(t=>allCategories.push({...t, _assessment:name})));
+          entry = {name, prevScore:'', currScore: ownScoreFor(use[0], name) || folded.currScore, isComparison:false, dateRaw: use[0].dateRaw};
+          ownFoldedCategories(use[0], folded).forEach(cat=>cat.topics.forEach(t=>allCategories.push({...t, _assessment:name})));
         } else {
           const [p, c] = use;
           const m2 = mergeTwoNarrativeReports(p.narrative, c.narrative);
@@ -2738,6 +3039,16 @@ async function parseAnyAssessmentFile(file){
             dateRaw:file.manualDate||'', dateIsManual:!!file.manualDate, assessmentNames:[]};
   }
 
+  // Same idea for the Numerical Fluency checkup's tiered checkbox grid - a
+  // hand-drawn colored checkmark with no text equivalent, needs the same
+  // pixel-based reader rather than the text-only narrative/chart parsers.
+  const isNfChecklist = rows.some(r => /^Mathnasium Checkup Numerical Fluency/i.test(r.map(i=>i.text).join(' ').trim()));
+  if(isNfChecklist){
+    const nf = await parseNfChecklistReport(file);
+    return {kind:'nfChecklist', file, studentName:nf.studentName, nfSubject:nf.subject, nfSkills:nf.skills,
+            dateRaw:file.manualDate||nf.date||'', dateIsManual:!!file.manualDate, assessmentNames:[]};
+  }
+
   // Check the narrative report format first — it's gated on an explicit "Assessment
   // Report"/"Mastery Report" title match, which is a far more reliable signal than
   // "does the percentage-chart parser happen to find a percent-shaped token somewhere."
@@ -3493,6 +3804,33 @@ document.querySelectorAll('input[name="emailCenter"]').forEach(radio=>{
 });
 applyCenterDefaults();
 
+/* Apply feature flags: hide any in-progress mode's radio option entirely
+   (not just disable it - staff shouldn't see it exists at all) unless
+   enabled by FEATURE_FLAGS or this visit's ?preview= override. */
+function applyFeatureFlags(){
+  const exitOn = featureEnabled('exitSummary');
+  const exitLabel = document.getElementById('modeLabelExit');
+  exitLabel.style.display = exitOn ? '' : 'none';
+  // If Exit Summary was left selected (e.g. from a previous preview visit)
+  // but the flag is now off, fall back to Progress Update rather than
+  // leaving the tool on a hidden, unreachable mode.
+  if(!exitOn && document.querySelector('input[name="emailMode"]:checked').value === 'exit'){
+    document.getElementById('modeLabelProgress').querySelector('input').checked = true;
+    applyEmailModeVisibility();
+  }
+  // Small on-page reminder when a hidden feature is visible only because of
+  // the URL override, so it's never mistaken for the normal staff-facing
+  // state, on this or anyone else's screen if the link gets shared.
+  const params = new URLSearchParams(location.search);
+  if(params.get('preview')){
+    const banner = document.createElement('div');
+    banner.textContent = 'PREVIEW MODE — showing in-progress features not yet visible to staff (?preview=' + escapeAttr(params.get('preview')) + ')';
+    banner.style.cssText = 'position:sticky;top:0;z-index:999;background:#EF3E33;color:#fff;text-align:center;padding:8px;font-size:13px;font-weight:700;';
+    document.body.insertBefore(banner, document.body.firstChild);
+  }
+}
+applyFeatureFlags();
+
 /* ---------------------------------------------------------
    BLURB LIBRARY (Risk-Free Assessment mode)
    Matched against assessment names/labels in the order the
@@ -3515,6 +3853,84 @@ const ASSESSMENT_BLURBS = [
 function findBlurb(label){
   const hit = ASSESSMENT_BLURBS.find(b=>b.pattern.test(label));
   return hit ? hit.text : '';
+}
+
+/* Which detected assessment names are eligible to compete for the "main"
+   comparison slot vs. always landing in Additional Assessments. Computation,
+   HS Fundamental Skills, Numerical Fluency, and Extension assessments are
+   add-ons by design (per the Assessment Selection Guide and confirmed
+   usage) - they never get to be "the" assessment, even if that's the only
+   file present for a student. Extensions can occasionally function as a
+   main assessment in rare cases, but that's rare enough that it's not worth
+   auto-detecting; staff can move a card manually if that specific case
+   comes up. "Level \d+(?! Extension)" mirrors "Algebra Readiness(?!
+   Extension)" right after it — a Level N Extension is exactly as much an
+   add-on as an Algebra Readiness Extension is, and needs the same exclusion
+   so it doesn't get treated as a genuine "main" identity on its own. */
+const MAIN_ELIGIBLE_RE = /^(Level \d+(?! Extension)|Great Foundations|Algebra Readiness(?! Extension)|Algebra 1|Algebra 2|Geometry Readiness|Geometry(?! Readiness)|Geometry w(?:ith)? Proofs|HMM Fundamental|HMM Trigonometry|HMM Linear|HMM Quadratic|HMM Advanced|Trigonometry|Precalculus|Integrated Math 1|Integrated Math 2|SAT Basic|SAT Advanced)/i;
+
+/* Category "fingerprints" (name -> total topic count) built from real 0%
+   reference exports Ashley provided for every Level 0-7, their Extensions,
+   Algebra Readiness/Extension, and Computation. Radius only ever prints ~3
+   example topics per category even at 0%, so this can't give a complete
+   topic-name lookup - but the category TOTALS are exact and, empirically,
+   barely overlap between a base Level and its own Extension (Extensions
+   cluster almost entirely in Geometry and Measurement/Data/Probability).
+   That's enough to confidently split a combined multi-card narrative report
+   (e.g. Olivia Hiatt's single PDF with both a "Level 6 Extension" card and
+   a "Level 7" card) by exact category-size match, without guessing.
+   Extend this as more reference files come in - it's additive, nothing
+   downstream breaks if an assessment isn't in here yet, it just falls back
+   to the old default (keep everything with the main identity). */
+const ASSESSMENT_TOPIC_REFERENCE = {
+  'Computation': {'Computation':25},
+  'Algebra Readiness': {'Expressions, Equations, and Inequalities':20,'Proportional Reasoning and Rates of Change':7,'Computation':5,'Number':4,'Functions and Graphing':3,'Measurement, Data Analysis, and Probability':1,'Problem Solving and Algebraic Reasoning':1},
+  'Algebra Readiness Extension': {'Geometry':19,'Measurement, Data Analysis, and Probability':3,'Proportional Reasoning and Rates of Change':1},
+  'Level 0': {'Counting':4,'Fraction Concepts':2,'Measurement, Data Analysis, and Probability':2,'Geometry':2,'Problem Solving and Algebraic Reasoning':1},
+  'Level 1': {'Number':4,'Computation':4,'Counting':4,'Problem Solving and Algebraic Reasoning':4,'Fraction Concepts':2,'Measurement, Data Analysis, and Probability':2},
+  'Level 1 Extension': {'Measurement, Data Analysis, and Probability':3,'Geometry':1},
+  'Level 2': {'Computation':11,'Problem Solving and Algebraic Reasoning':6,'Fraction Concepts':5,'Number':5,'Measurement, Data Analysis, and Probability':5,'Counting':2,'Proportional Reasoning and Rates of Change':1},
+  'Level 2 Extension': {'Measurement, Data Analysis, and Probability':6,'Geometry':1},
+  'Level 3': {'Computation':11,'Fraction Concepts':10,'Problem Solving and Algebraic Reasoning':5,'Measurement, Data Analysis, and Probability':5,'Number':4,'Number Sense':2,'Proportional Reasoning and Rates of Change':1,'Counting':1},
+  'Level 3 Extension': {'Geometry':8,'Measurement, Data Analysis, and Probability':3},
+  'Level 4': {'Fraction Concepts':19,'Computation':14,'Number':7,'Problem Solving and Algebraic Reasoning':3,'Measurement, Data Analysis, and Probability':2,'Proportional Reasoning and Rates of Change':1,'Number Sense':1,'Geometry':1},
+  'Level 4 Extension': {'Geometry':6,'Measurement, Data Analysis, and Probability':2},
+  'Level 5': {'Fraction Concepts':11,'Number':6,'Proportional Reasoning and Rates of Change':6,'Problem Solving and Algebraic Reasoning':4,'Computation':3,'Number Sense':2,'Expressions, Equations, and Inequalities':1},
+  'Level 5 Extension': {'Geometry':8,'Measurement, Data Analysis, and Probability':1},
+  'Level 6': {'Proportional Reasoning and Rates of Change':16,'Number':11,'Computation':5,'Expressions, Equations, and Inequalities':3,'Fraction Concepts':2,'Problem Solving and Algebraic Reasoning':2,'Number Sense':1},
+  'Level 6 Extension': {'Measurement, Data Analysis, and Probability':7,'Geometry':6},
+  'Level 7': {'Proportional Reasoning and Rates of Change':17,'Expressions, Equations, and Inequalities':13,'Computation':7,'Number':5,'Number Sense':1,'Problem Solving and Algebraic Reasoning':1,'Functions and Graphing':1},
+  'Level 7 Extension': {'Geometry':7,'Measurement, Data Analysis, and Probability':6,'Proportional Reasoning and Rates of Change':1,'Number':1}
+};
+
+/* For a file with 2+ score cards on one page (a main-eligible assessment
+   plus an add-on riding along, e.g. Level 7 + Level 6 Extension), buckets
+   each of its parsed categories to whichever specific identity most likely
+   owns it via ASSESSMENT_TOPIC_REFERENCE's exact category-size match. A
+   category that doesn't cleanly match exactly one candidate (no reference
+   data yet, or an unlucky size coincidence) stays with the main identity -
+   the same default as before this existed, so an unknown assessment type
+   degrades gracefully rather than guessing wrong. */
+function bucketCategoriesByAssessment(file){
+  const buckets = {};
+  const top = file.narrative && file.narrative.topAssessments;
+  if(!top || top.length < 2 || !file.narrative.categories) return buckets;
+  const mainRaw = (top.find(t=>MAIN_ELIGIBLE_RE.test(t.name)) || {}).name;
+  const addonNames = top.map(t=>t.name).filter(n=>n!==mainRaw);
+  file.narrative.categories.forEach(cat=>{
+    if(isNfCategory(cat.name)) return;
+    let owner = mainRaw;
+    for(const addonName of addonNames){
+      const addonDen = (ASSESSMENT_TOPIC_REFERENCE[addonName]||{})[cat.name];
+      const mainDen = (ASSESSMENT_TOPIC_REFERENCE[mainRaw]||{})[cat.name];
+      const addonMatches = addonDen !== undefined && +addonDen === +cat.den;
+      const mainMatches = mainDen !== undefined && +mainDen === +cat.den;
+      if(addonMatches && !mainMatches){ owner = addonName; break; }
+    }
+    if(!buckets[owner]) buckets[owner] = [];
+    buckets[owner].push(cat);
+  });
+  return buckets;
 }
 
 const CENTER_INFO = {
