@@ -469,16 +469,37 @@
     <summary>How to use this page</summary>
     <div class="howto-body">
       <div class="pull-note">
-        Use the <strong>Report</strong> button on the student's details page in Radius to pull assessment reports. Leave <strong>Expected Timeline</strong> unchecked, then click <strong>Preview</strong> to download the PDF. (Also double-check <strong>Results Display Format</strong> is set to <strong>Fraction</strong>, since that's what this tool reads.)
+        Use the <strong>Report</strong> button on the student's details page in Radius to pull Assessment reports. For Numerical Fluency assessments, use the <strong>chart</strong> button. Click <strong>Preview</strong> to download the PDF.
       </div>
-      <p style="margin-top:12px;">Quick rundown:</p>
+      <p style="margin-top:12px;">Picking a mode up top changes what the rest of the page asks for:</p>
       <ul>
-        <li>Upload all assessment reports.</li>
-        <li>Check the student details.</li>
-        <li>Review the analyzed scores and adjust as necessary.</li>
-        <li>Fill in the new learning plan topics (auto-filled if you drop a Learning Plan Report PDF in with the rest, or type your own).</li>
-        <li>Generate the email.</li>
+        <li><strong>Progress Update</strong>: for an existing family, built from their assessment PDFs.</li>
+        <li><strong>Risk-Free Assessment</strong>: for a new lead's first assessment.</li>
       </ul>
+      <p>Quick rundown for Progress Update / RFA:</p>
+      <ul>
+        <li><strong>Step 1:</strong> drop in <strong>all</strong> of the student's PDFs at once, main assessment, Numerical Fluency (pull the <strong>chart</strong>, not the report), Computation, Extensions, whatever you've got, and hit <strong>Analyze all</strong>. Learning Plan Report PDFs get pulled out automatically to fill Step 4 below; they don't need separate handling.</li>
+        <li><strong>Additional assessments</strong> (between Steps 1 and 2): anything that wasn't the main assessment lands here automatically, shown as a one-line summary once it's populated. Click <strong>Replace PDF</strong> on a card to swap its source, or <strong>+ Add another assessment</strong> to attach one by hand.</li>
+        <li><strong>Step 2:</strong> check the student's name, pronoun, and sender details, and fix anything that came in wrong.</li>
+        <li><strong>Step 3:</strong> review the skill-by-skill breakdown and check the boxes for what's worth mentioning in the email.</li>
+        <li><strong>Step 4:</strong> Learning Plan topics, auto-filled if a Learning Plan Report PDF was in the Step 1 batch, or type your own.</li>
+        <li><strong>Step 5:</strong> generate the email, edit freely, then copy; bullets and formatting paste cleanly into Gmail.</li>
+      </ul>
+      <p><strong>Sibling mode</strong> (top of the page): run each sibling through their own tab, then generate one combined email covering all of them.</p>
+      <p style="margin-bottom:0;">The <strong>East Vancouver / West Linn</strong> toggle up top drives center-specific wording and the signature block, so always double-check it matches before generating.</p>
+    </div>
+  </details>
+  <details class="howto" id="howtoExitSummary" style="display:none;">
+    <summary>How to use Exit Summary mode</summary>
+    <div class="howto-body">
+      <p style="margin-top:0;">A different flow from Progress Update / RFA, since there's no PDF to parse: a multi-year exit narrative isn't in any single Radius export. Everything's entered by hand:</p>
+      <ul>
+        <li>Fill in the student's info and, row by row, their <strong>milestone history</strong> (assessment name, start/end dates and scores). The tool chains these into a narrative, handles retakes automatically, and can build a simple score-over-time chart from the same data.</li>
+        <li>Write the <strong>personal note</strong> yourself; that part's deliberately not auto-generated.</li>
+        <li>Turn on <strong>Sibling mode</strong> at the top of this step for a combined family email, styled like the real MEV examples.</li>
+        <li>The <strong>cancellation / billing</strong> section is optional and shared across the whole email; anything left blank shows up as an obvious <strong>[FILL IN]</strong> placeholder rather than silently disappearing.</li>
+      </ul>
+      <p style="margin-bottom:0;">This mode is still being tested, so double-check the draft closely before sending.</p>
     </div>
   </details>
 
@@ -597,7 +618,7 @@
 
       <div class="field-section">
         <div class="field-section-label">Milestone history</div>
-        <p class="desc" style="margin-top:0;">One row per assessment or level, in order. For the assessment the student is currently on, leave <strong>End date</strong> blank &mdash; the tool phrases that one as ongoing instead of completed. You can still fill in <strong>End score</strong> on that row with their current score, and it'll read as "has been making steady progress up to their current score of X%." Re-using an assessment name (a retake) is picked up automatically and phrased as "re-started." <strong>Note</strong> is optional free text tacked onto that row's sentence &mdash; useful for something like "we identified 29 skills to work on and covered 10 of them."</p>
+        <p class="desc" style="margin-top:0;">One row per assessment or level, in order. For the assessment the student is currently on, leave <strong>End date</strong> blank; the tool phrases that one as ongoing instead of completed. You can still fill in <strong>End score</strong> on that row with their current score, and it'll read as "has been making steady progress up to their current score of X%." Re-using an assessment name (a retake) is picked up automatically and phrased as "re-started." <strong>Note</strong> is optional free text tacked onto that row's sentence, useful for something like "we identified 29 skills to work on and covered 10 of them."</p>
         <div class="ms-head">
           <span>Assessment / level</span><span>Start date</span><span>Start score</span><span>End date</span><span>End score</span><span>Note (optional)</span><span></span>
         </div>
@@ -614,7 +635,7 @@
 
       <div class="field-section">
         <div class="field-section-label">Personal note</div>
-        <p class="desc" style="margin-top:0;">Write the closing paragraph yourself &mdash; this is the part that should sound like you, not a template. It goes right after this student's milestone narrative.</p>
+        <p class="desc" style="margin-top:0;">Write the closing paragraph yourself; this is the part that should sound like you, not a template. It goes right after this student's milestone narrative.</p>
         <textarea class="plan" id="exitPersonalNote" placeholder="Jenny has been an incredible student during her time at the center. She is thorough and diligent with her work..."></textarea>
       </div>
 
@@ -734,7 +755,7 @@
       <div class="hint">Auto-filled from a Learning Plan Report dropped in Step 1, or type your own</div>
     </div>
     <div class="step-body">
-      <p class="desc">One topic per line. These go in the "will be working on these topics" section of the email. Drop a Learning Plan Report PDF in Step 1 to fill this in automatically &mdash; Risk-Free Assessment mode pulls Initial Topic items, Progress Update mode pulls In-Progress and Initial Topic items (Mastered topics are left out either way).</p>
+      <p class="desc">One topic per line. These go in the "will be working on these topics" section of the email. Drop a Learning Plan Report PDF in Step 1 to fill this in automatically: Risk-Free Assessment mode pulls Initial Topic items, Progress Update mode pulls In-Progress and Initial Topic items (Mastered topics are left out either way).</p>
       <textarea class="plan" id="planTopics" placeholder="Exponents - Whole Number and Fraction Bases
 Problem Solving - Proportional Reasoning
 Integer Subtraction/Multiplication and Division with Two Numbers"></textarea>
@@ -1028,7 +1049,7 @@ function renderFileList(){
   wrap.classList.add('filled');
   nameEl.textContent = `${filesChosen.length} file${filesChosen.length===1?'':'s'} ready to analyze`;
   host.innerHTML =
-    `<div class="file-date-note">Radius now stamps every PDF with today's date instead of the actual test date, so we can't always tell old vs. new apart automatically. If a student has more than one PDF here, type each one's real test date below (e.g. 5/27/2026) &mdash; leave blank to fall back to whatever date is inside the PDF.</div>` +
+    `<div class="file-date-note">Radius now stamps every PDF with today's date instead of the actual test date, so we can't always tell old vs. new apart automatically. If a student has more than one PDF here, type each one's real test date below (e.g. 5/27/2026); leave blank to fall back to whatever date is inside the PDF.</div>` +
     `<div class="file-row-list">${filesChosen.map((f,i)=>
       `<div class="file-row">` +
         `<span class="file-row-name" title="${escapeAttr(f.name)}">${escapeAttr(f.name)}</span>` +
@@ -2089,8 +2110,8 @@ document.getElementById('parseBtn').addEventListener('click', async ()=>{
       }));
       const unclear = c.nfSkills.filter(s=>s.level==='Not checked').length;
       summary.push(unclear
-        ? `Additional: <strong>${escapeAttr(label)}</strong> checkup read (${c.nfSkills.length} skill areas, ${unclear} couldn't be read confidently \u2014 double-check those rows) &mdash; added as its own card below.`
-        : `Additional: <strong>${escapeAttr(label)}</strong> checkup read (${c.nfSkills.length} skill areas, all levels detected) &mdash; added as its own card below.`);
+        ? `Additional: <strong>${escapeAttr(label)}</strong> checkup read (${c.nfSkills.length} skill areas, ${unclear} couldn't be read confidently, double-check those rows). Added as its own card below.`
+        : `Additional: <strong>${escapeAttr(label)}</strong> checkup read (${c.nfSkills.length} skill areas, all levels detected). Added as its own card below.`);
     });
 
     // Which detected names are eligible to compete for the "main" comparison
@@ -2150,8 +2171,8 @@ document.getElementById('parseBtn').addEventListener('click', async ()=>{
           _narrativeCurr:null, currFileName: c.file.name, prevFileName:'', _uploadExpanded:false
         });
         summary.push(masteredTopics.length
-          ? `Additional: <strong>${escapeAttr(ta.name)}</strong> (${fracLabelToPct(ta.num, ta.den)}) was on the same report as ${escapeAttr(mainNameOf(c))} &mdash; added as its own card below, with ${masteredTopics.length} mastered topic(s) auto-matched to it by category size. Double-check they landed right.`
-          : `Additional: <strong>${escapeAttr(ta.name)}</strong> (${fracLabelToPct(ta.num, ta.den)}) was on the same report as ${escapeAttr(mainNameOf(c))} &mdash; added as its own card below. No mastered topics could be confidently matched to it yet; add any worth mentioning by hand.`);
+          ? `Additional: <strong>${escapeAttr(ta.name)}</strong> (${fracLabelToPct(ta.num, ta.den)}) was on the same report as ${escapeAttr(mainNameOf(c))}. Added as its own card below, with ${masteredTopics.length} mastered topic(s) auto-matched to it by category size. Double-check they landed right.`
+          : `Additional: <strong>${escapeAttr(ta.name)}</strong> (${fracLabelToPct(ta.num, ta.den)}) was on the same report as ${escapeAttr(mainNameOf(c))}. Added as its own card below. No mastered topics could be confidently matched to it yet; add any worth mentioning by hand.`);
       });
     });
 
@@ -2242,7 +2263,7 @@ document.getElementById('parseBtn').addEventListener('click', async ()=>{
           const m2 = mergeTwoNarrativeReports(p.narrative, c.narrative);
           entry = {name, prevScore: m2.prevScore, currScore: m2.currScore, isComparison:true, dateRaw: c.dateRaw};
           if(orderIsUncertain(use)){
-            summary.push(`&#9888; <strong>${escapeAttr(name)}</strong>: couldn't tell which of these two came first &mdash; both show the same (or no) date and neither has a test date typed in. Double-check the order, or fill in the test dates above and re-analyze.`);
+            summary.push(`&#9888; <strong>${escapeAttr(name)}</strong>: couldn't tell which of these two came first, since both show the same (or no) date and neither has a test date typed in. Double-check the order, or fill in the test dates above and re-analyze.`);
           }
           m2.categories.forEach(cat=>cat.topics.forEach(t=>allCategories.push({...t, _assessment:name})));
         }
@@ -2258,7 +2279,7 @@ document.getElementById('parseBtn').addEventListener('click', async ()=>{
         assessmentBreakdown: breakdown,
         singleChartMode: false
       };
-      summary.push(`Main assessments: <strong>${breakdown.map(b=>escapeAttr(b.name)).join('</strong>, <strong>')}</strong> &mdash; each gets its own breakdown in the email rather than being compared against each other.`);
+      summary.push(`Main assessments: <strong>${breakdown.map(b=>escapeAttr(b.name)).join('</strong>, <strong>')}</strong>. Each gets its own breakdown in the email rather than being compared against each other.`);
       const skipped = narrativeMain.filter(c=>!usedFiles.includes(c));
       if(skipped.length) summary.push(`(${skipped.length} extra file(s) of an assessment type with 3+ dates fell in between and were set aside, see below)`);
 
@@ -2311,7 +2332,7 @@ document.getElementById('parseBtn').addEventListener('click', async ()=>{
         }
         summary.push(`Main assessment: <strong>${escapeAttr(prevC.file.name)}</strong> → <strong>${escapeAttr(currC.file.name)}</strong> (compared)`);
         if(orderIsUncertain(mainUsed)){
-          summary.push(`&#9888; Couldn't tell which of these two came first &mdash; both show the same (or no) date and neither has a test date typed in. Double-check "Previous" vs "Current" below, or fill in the test dates above and re-analyze.`);
+          summary.push(`&#9888; Couldn't tell which of these two came first, since both show the same (or no) date and neither has a test date typed in. Double-check "Previous" vs "Current" below, or fill in the test dates above and re-analyze.`);
         }
       }
       dataset = merged;
@@ -2365,11 +2386,11 @@ document.getElementById('parseBtn').addEventListener('click', async ()=>{
         return;
       }
       if(unnamedLabels.has(label)){
-        summary.push(`&#9888; Couldn't figure out what to call <strong>${escapeAttr(label)}</strong> &mdash; rename it in the card below so it reads right in the email (currently it would say "On the ${escapeAttr(label)}...").`);
+        summary.push(`&#9888; Couldn't figure out what to call <strong>${escapeAttr(label)}</strong>. Rename it in the card below so it reads right in the email (currently it would say "On the ${escapeAttr(label)}...").`);
       }
       files.sort(byDate);
       if(orderIsUncertain(files)){
-        summary.push(`&#9888; <strong>${escapeAttr(label)}</strong>: couldn't tell which file is older &mdash; they show the same (or no) date and none has a test date typed in. Double-check "Previous" vs "Current" below, or fill in the test dates above and re-analyze.`);
+        summary.push(`&#9888; <strong>${escapeAttr(label)}</strong>: couldn't tell which file is older, since they show the same (or no) date and none has a test date typed in. Double-check "Previous" vs "Current" below, or fill in the test dates above and re-analyze.`);
       }
       const built = files.length === 1 ? buildCardFromSingle(files[0]) : buildCardFromPair(files[0], files[files.length-1]);
       const card = {
@@ -2409,11 +2430,11 @@ document.getElementById('parseBtn').addEventListener('click', async ()=>{
 
       const planEl = document.getElementById('planTopics');
       if(!target.length && merged.mastered.length){
-        summary.push(`&#9888; Every topic on the Learning Plan Report is already marked Mastered &mdash; this student needs a new assessment and a new plan, not a pull from this report. Step 4 was left as-is.`);
+        summary.push(`&#9888; Every topic on the Learning Plan Report is already marked Mastered. This student needs a new assessment and a new plan, not a pull from this report. Step 4 was left as-is.`);
       } else if(!target.length){
         summary.push(`Learning Plan Report read, but no ${isRfa?'Initial Topic':'In-Progress or Initial Topic'} items were found on it to pull into Step 4.`);
       } else if(planEl.value.trim()){
-        summary.push(`Learning Plan Report found ${target.length} topic(s) to pull into Step 4, but left it alone since it already has content &mdash; clear it first if you want the auto-fill.`);
+        summary.push(`Learning Plan Report found ${target.length} topic(s) to pull into Step 4, but left it alone since it already has content. Clear it first if you want the auto-fill.`);
       } else {
         planEl.value = target.join('\n');
         summary.push(`Step 4 filled in from the Learning Plan Report: ${target.length} ${isRfa?'Initial Topic':'In-Progress / Initial Topic'} item(s).`);
@@ -2727,7 +2748,7 @@ function renderExtra(){
         ${hasSource ? `<div style="margin:-4px 0 10px;"><button type="button" class="btn-ghost btn-sm extraCollapseUpload" data-id="${card.id}">Done \u2014 hide upload boxes</button></div>` : ''}`;
     const sourceSummaryHtml = `
         <div class="extra-source-line">
-          <span class="extra-source-text">${card.currFileName ? `Source: <strong>${escapeAttr(card.currFileName)}</strong>` : 'No PDF attached &mdash; added manually'}${card.prevFileName ? ` &middot; Previous: <strong>${escapeAttr(card.prevFileName)}</strong>` : ''}</span>
+          <span class="extra-source-text">${card.currFileName ? `Source: <strong>${escapeAttr(card.currFileName)}</strong>` : 'No PDF attached (added manually)'}${card.prevFileName ? ` &middot; Previous: <strong>${escapeAttr(card.prevFileName)}</strong>` : ''}</span>
           <button type="button" class="btn-ghost btn-sm extraToggleUpload" data-id="${card.id}">${card.currFileName || card.prevFileName ? 'Replace PDF' : 'Attach PDF'}</button>
         </div>`;
     html += `<div class="step" style="margin-top:14px;border-color:var(--line);">
@@ -3811,6 +3832,7 @@ function applyFeatureFlags(){
   const exitOn = featureEnabled('exitSummary');
   const exitLabel = document.getElementById('modeLabelExit');
   exitLabel.style.display = exitOn ? '' : 'none';
+  document.getElementById('howtoExitSummary').style.display = exitOn ? '' : 'none';
   // If Exit Summary was left selected (e.g. from a previous preview visit)
   // but the flag is now off, fall back to Progress Update rather than
   // leaving the tool on a hidden, unreachable mode.
@@ -3824,7 +3846,7 @@ function applyFeatureFlags(){
   const params = new URLSearchParams(location.search);
   if(params.get('preview')){
     const banner = document.createElement('div');
-    banner.textContent = 'PREVIEW MODE — showing in-progress features not yet visible to staff (?preview=' + escapeAttr(params.get('preview')) + ')';
+    banner.textContent = 'PREVIEW MODE: showing in-progress features not yet visible to staff (?preview=' + escapeAttr(params.get('preview')) + ')';
     banner.style.cssText = 'position:sticky;top:0;z-index:999;background:#EF3E33;color:#fff;text-align:center;padding:8px;font-size:13px;font-weight:700;';
     document.body.insertBefore(banner, document.body.firstChild);
   }
@@ -4079,7 +4101,7 @@ function generateRfaEmail(){
   if(scheduling){
     body += `Once the enrollment documents are complete, you'll get a link to our online scheduling system, AppointyM, where you can book sessions at your convenience.\n\n`;
   } else {
-    body += `Once the enrollment documents are complete, we'll get ${student}'s binder ready to go — ${center.name} runs on a drop-in basis, so ${pr.subj} can come in whenever works for your schedule.\n\n`;
+    body += `Once the enrollment documents are complete, we'll get ${student}'s binder ready to go. ${center.name} runs on a drop-in basis, so ${pr.subj} can come in whenever works for your schedule.\n\n`;
   }
 
   body += `If you have any questions, please let us know! We're looking forward to working with ${student}.\n\n`;
@@ -4156,7 +4178,7 @@ function generateSiblingRfaEmail(){
   if(scheduling){
     body += `Once the enrollment documents are complete, you'll get a link to our online scheduling system, AppointyM, where you can book sessions at your convenience.\n\n`;
   } else {
-    body += `Once the enrollment documents are complete, we'll get their binders ready to go — ${center.name} runs on a drop-in basis, so they can come in whenever works for your schedule.\n\n`;
+    body += `Once the enrollment documents are complete, we'll get their binders ready to go. ${center.name} runs on a drop-in basis, so they can come in whenever works for your schedule.\n\n`;
   }
 
   body += `If you have any questions, please let us know! We're looking forward to working with ${listJoin(names)}.\n\n`;
