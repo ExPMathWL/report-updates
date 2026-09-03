@@ -1089,7 +1089,17 @@ function addFiles(fileList){
   const drop = document.getElementById('dropAll');
   const input = document.getElementById('fileAll');
 
-  drop.addEventListener('click', ()=>input.click());
+  // No explicit click-to-open handler here on purpose: `drop` is a <label>
+  // that already wraps `input` as a child, so the browser natively opens
+  // the file picker on click without any JS needed (same as the two
+  // Additional Assessment upload slots below, which never had this
+  // problem). Calling input.click() a second time here used to fire on top
+  // of that native forwarding - redundant on desktop, but on iOS Safari
+  // specifically it double-triggers the picker and the just-selected files
+  // never make it into input.files by the time `change` fires. Confirmed
+  // this was the actual bug (not a change-event or accept-type issue) by
+  // comparing against the other two upload slots, which don't have this
+  // extra handler and don't have the reported problem.
   input.addEventListener('change', ()=>{ addFiles(input.files); input.value=''; });
 
   drop.addEventListener('dragover', e=>{ e.preventDefault(); drop.classList.add('dragging'); });
