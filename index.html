@@ -2361,7 +2361,7 @@ document.getElementById('parseBtn').addEventListener('click', async ()=>{
           id: ++extraCounter, label, prevScore:'',
           score: fracLabelToPct(nfCat.num, nfCat.den),
           topics: nfCat.mastered.map(name=>({name, curr:'Mastered', prev:'', checked:true})),
-          _narrativeCurr: null, currFileName:'(split from main report)', prevFileName:''
+          _narrativeCurr: null, currFileName:'(split from main report)', prevFileName:'', _uploadExpanded:false
         });
         summary.push(`Split out: <strong>${escapeAttr(label)}</strong> (${nfCat.num}/${nfCat.den}) from the main report into Additional assessments`);
       });
@@ -4330,8 +4330,8 @@ function generateSiblingProgressEmail(){
   });
 
   body += center.progressTrigger === 'learningPlan'
-    ? `Skill-by-skill breakdowns for each of them are attached to this email. We've built each of their next Learning Plans based on these results, so we'll follow up with another update once those are complete. If you have any questions at all, please don't hesitate to reach out. Thank you!\n\n`
-    : `Skill-by-skill breakdowns for each of them are attached to this email. A reassessment is built into each of their next Learning Plans, so we'll follow up with another update once those are complete. If you have any questions at all, please don't hesitate to reach out. Thank you!\n\n`;
+    ? `The Assessment Reports and Learning Plans have been uploaded to myMathnasium for your convenience, but I have attached them here as well. We've built each of their next Learning Plans based on these results, so we'll follow up with another update once those are complete. If you have any questions at all, please don't hesitate to reach out. Thank you!\n\n`
+    : `The Assessment Reports and Learning Plans have been uploaded to myMathnasium for your convenience, but I have attached them here as well. A reassessment is built into each of their next Learning Plans, so we'll follow up with another update once those are complete. If you have any questions at all, please don't hesitate to reach out. Thank you!\n\n`;
   body += `Best,\n${staff}\n${center.name}`;
 
   return body;
@@ -4468,9 +4468,9 @@ document.getElementById('genBtn').addEventListener('click', async ()=>{
     if(isCleanLevelJump){
       const prevLabelClean = forParentFacing(bd[0].name);
       const currLabelClean = forParentFacing(bd[1].name);
-      body += `${center.includeIntroLine ? `This is ${staff} with Mathnasium. ` : ''}${student} recently completed ${pr.poss} ${prevLabelClean} assessment and scored ${bd[0].currScore} overall! Since ${pr.subj} performed so well, we gave ${pr.obj} our ${currLabelClean} assessment for ${pr.poss} next progress check. Here's the full breakdown of both. A skill-by-skill breakdown is attached to this email.\n\n`;
+      body += `${center.includeIntroLine ? `This is ${staff} with Mathnasium. ` : ''}${student} recently completed ${pr.poss} ${prevLabelClean} assessment and scored ${bd[0].currScore} overall! Since ${pr.subj} performed so well, we gave ${pr.obj} our ${currLabelClean} assessment for ${pr.poss} next progress check. Here's the full breakdown of both. The Assessment Reports and Learning Plan have been uploaded to myMathnasium for your convenience, but I have attached them here as well.\n\n`;
     } else {
-      body += `${center.includeIntroLine ? `This is ${staff} with Mathnasium. ` : ''}${student} recently completed ${listJoin(names)} assessments, and I wanted to share a full breakdown of ${pr.poss} results. A skill-by-skill breakdown is attached to this email.\n\n`;
+      body += `${center.includeIntroLine ? `This is ${staff} with Mathnasium. ` : ''}${student} recently completed ${listJoin(names)} assessments, and I wanted to share a full breakdown of ${pr.poss} results. The Assessment Reports and Learning Plan have been uploaded to myMathnasium for your convenience, but I have attached them here as well.\n\n`;
     }
 
     bd.forEach((b,bi)=>{
@@ -4510,7 +4510,7 @@ document.getElementById('genBtn').addEventListener('click', async ()=>{
     if(!preMode && prevPlan){
       body += `${pr.subj[0].toUpperCase()+pr.subj.slice(1)} had been working on ${pr.poss} ${prevPlan} lesson plan since the last update. `;
     }
-    body += `${scoreLine} A skill-by-skill breakdown is attached to this email.\n\n`;
+    body += `${scoreLine} The Assessment Reports and Learning Plan have been uploaded to myMathnasium for your convenience, but I have attached them here as well.\n\n`;
 
     if(mastery.length){
       body += preMode
