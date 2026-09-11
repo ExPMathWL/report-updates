@@ -393,6 +393,31 @@
 
   textarea.plan{width:100%;min-height:110px;resize:vertical;font-family:inherit;font-size:14px;padding:10px;border:1px solid var(--line);border-radius:6px;}
   textarea.email{width:100%;min-height:420px;resize:vertical;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px;line-height:1.6;padding:14px;border:1px solid var(--line);border-radius:6px;background:#fffdf9;}
+  .email-toolbar{
+    display:flex;gap:3px;flex-wrap:wrap;align-items:center;
+    border:1px solid var(--line);border-bottom:none;border-radius:6px 6px 0 0;
+    background:#f7f6f2;padding:6px;position:sticky;top:0;z-index:2;
+  }
+  .email-tb-btn{
+    font-family:inherit;font-size:13px;padding:6px 11px;border:1px solid transparent;border-radius:4px;
+    background:transparent;color:var(--ink);cursor:pointer;min-width:30px;line-height:1.2;
+  }
+  .email-tb-btn:hover{background:#fff;border-color:var(--line);}
+  .email-tb-btn.active{background:#fff;border-color:var(--red);color:var(--red);}
+  .email-tb-sep{width:1px;align-self:stretch;background:var(--line);margin:3px 4px;}
+  div.email{
+    width:100%;min-height:420px;max-height:none;overflow-y:visible;
+    font-family:"Avenir Next","Avenir",-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+    font-size:14px;line-height:1.6;padding:14px;
+    border:1px solid var(--line);border-radius:0 0 6px 6px;background:#fffdf9;
+  }
+  div.email:focus{outline:2px solid var(--red);outline-offset:-2px;}
+  div.email:empty:before{content:attr(data-placeholder);color:var(--ink-soft);}
+  div.email h3{font-size:1.15em;font-weight:700;margin:0.7em 0 0.3em;}
+  div.email h3:first-child{margin-top:0;}
+  div.email p{margin:0 0 1em 0;}
+  div.email ul,div.email ol{margin:0 0 1em 0;padding-left:22px;}
+  div.email img{max-width:100%;height:auto;}
 
   .empty-note{color:var(--ink-soft);font-size:13px;font-style:italic;padding:14px 0;}
   .copy-ok{color:var(--up);font-weight:700;font-size:12.5px;margin-left:10px;}
@@ -783,7 +808,18 @@ Integer Subtraction/Multiplication and Division with Two Numbers"></textarea>
           <span class="copy-ok" id="copyHeaderOk" style="display:none;">Copied!</span>
         </div>
       </div>
-      <textarea class="email" id="emailOut" placeholder="Click &quot;Generate email&quot; once your details and topics above look right."></textarea>
+      <div class="email-toolbar" id="emailToolbar">
+        <button type="button" class="email-tb-btn" data-cmd="bold" title="Bold"><b>B</b></button>
+        <button type="button" class="email-tb-btn" data-cmd="italic" title="Italic"><i>I</i></button>
+        <button type="button" class="email-tb-btn" data-cmd="underline" title="Underline"><u>U</u></button>
+        <span class="email-tb-sep"></span>
+        <button type="button" class="email-tb-btn" data-cmd="formatBlock" data-value="&lt;h3&gt;" title="Heading">Heading</button>
+        <button type="button" class="email-tb-btn" data-cmd="formatBlock" data-value="&lt;p&gt;" title="Normal text">Normal</button>
+        <span class="email-tb-sep"></span>
+        <button type="button" class="email-tb-btn" data-cmd="insertUnorderedList" title="Bullet list">&#8226; List</button>
+        <button type="button" class="email-tb-btn" data-cmd="insertOrderedList" title="Numbered list">1. List</button>
+      </div>
+      <div class="email" id="emailOut" contenteditable="true" data-placeholder="Click &quot;Generate email&quot; once your details and topics above look right."></div>
     </div>
   </div>
 
@@ -4355,27 +4391,99 @@ function buildEmailHeader(){
   return `${label} for ${names.join(' + ')} at Mathnasium`;
 }
 
+/* ---------------------------------------------------------
+   EMAIL OUTPUT TOOLBAR (WYSIWYG formatting: bold/italic/underline,
+   heading, bullet/numbered lists)
+--------------------------------------------------------- */
+document.querySelectorAll('.email-tb-btn').forEach(btn=>{
+  // preventDefault on mousedown (not click) keeps the current text selection
+  // inside the contenteditable box intact - without this, clicking the
+  // button steals focus first and the browser collapses the selection
+  // before the command has anything to act on.
+  btn.addEventListener('mousedown', e=> e.preventDefault());
+  btn.addEventListener('click', ()=>{
+    const box = document.getElementById('emailOut');
+    box.focus();
+    document.execCommand(btn.dataset.cmd, false, btn.dataset.value || null);
+    updateEmailToolbarState();
+  });
+});
+function updateEmailToolbarState(){
+  const map = {bold:'bold', italic:'italic', underline:'underline',
+    insertUnorderedList:'insertUnorderedList', insertOrderedList:'insertOrderedList'};
+  Object.values(map).forEach(cmd=>{
+    const btn = document.querySelector(`.email-tb-btn[data-cmd="${cmd}"]`);
+    if(btn) btn.classList.toggle('active', document.queryCommandState(cmd));
+  });
+  // Heading/Normal aren't queryCommandState-able the same way - check the
+  // current block's tag name instead.
+  let node = window.getSelection().anchorNode;
+  if(node && node.nodeType===3) node = node.parentNode;
+  const isHeading = !!(node && node.closest && node.closest('#emailOut h3'));
+  const headingBtn = document.querySelector('.email-tb-btn[data-value="<h3>"]');
+  const normalBtn = document.querySelector('.email-tb-btn[data-value="<p>"]');
+  if(headingBtn) headingBtn.classList.toggle('active', isHeading);
+  if(normalBtn) normalBtn.classList.toggle('active', false); // never shown as "active", it's an action not a toggle state
+}
+document.getElementById('emailOut').addEventListener('keyup', updateEmailToolbarState);
+document.getElementById('emailOut').addEventListener('mouseup', updateEmailToolbarState);
+// Tab-to-indent / Shift+Tab-to-outdent inside a list, matching how Gmail's
+// own compose box behaves. Native browsers are inconsistent about giving
+// this for free inside a contenteditable (Tab's default behavior is
+// usually "move focus to the next element on the page," not "indent this
+// list item"), so this is wired explicitly rather than assumed - Enter
+// (continue the list / exit it on an empty line) IS reliably native
+// across browsers already and doesn't need the same explicit handling.
+document.getElementById('emailOut').addEventListener('keydown', e=>{
+  if(e.key === 'Tab'){
+    // Only hijack Tab when the cursor is actually inside a list item -
+    // execCommand('indent') outside a list wraps the current paragraph in
+    // a blockquote in most browsers, which isn't what "indent" should mean
+    // for plain text.
+    let node = window.getSelection().anchorNode;
+    if(node && node.nodeType === 3) node = node.parentNode;
+    const inList = !!(node && node.closest && node.closest('#emailOut li'));
+    if(inList){
+      e.preventDefault();
+      document.execCommand(e.shiftKey ? 'outdent' : 'indent', false, null);
+    }
+  }
+});
+
+/* Every email-generation path below builds a plain-text body first (same as
+   before), then this converts it to the box's initial rich HTML in one
+   place, reusing the exact same paragraph/bullet/chart-image logic that
+   used to run at copy time. Moving that conversion to generation time
+   means the box always holds real HTML from the start, so any formatting
+   the user then applies (bold, headings, etc.) and the copy step can just
+   read the box's content directly - no separate plain-text-to-HTML pass
+   needed at copy time anymore. */
+function setEmailOutput(plainText, chartMap){
+  document.getElementById('emailOut').innerHTML = emailTextToHtml(plainText, chartMap || null);
+}
+
 document.getElementById('genBtn').addEventListener('click', async ()=>{
   const mode = document.querySelector('input[name="emailMode"]:checked').value;
   if(mode === 'exit'){
     document.getElementById('emailHeaderOut').value = buildExitEmailHeader();
-    document.getElementById('emailOut').value = (exitSiblingModeOn() && exitStudents.length > 1)
+    const exitBody = (exitSiblingModeOn() && exitStudents.length > 1)
       ? await buildExitSiblingEmail()
       : await buildExitEmail();
+    setEmailOutput(exitBody, exitChartDataUrls);
     return;
   }
   const isRfa = mode === 'rfa';
   document.getElementById('emailHeaderOut').value = buildEmailHeader();
   if(isRfa){
     if(siblingModeOn() && students.length > 1){
-      document.getElementById('emailOut').value = generateSiblingRfaEmail();
+      setEmailOutput(generateSiblingRfaEmail());
     } else {
-      document.getElementById('emailOut').value = generateRfaEmail();
+      setEmailOutput(generateRfaEmail());
     }
     return;
   }
   if(siblingModeOn() && students.length > 1){
-    document.getElementById('emailOut').value = generateSiblingProgressEmail();
+    setEmailOutput(generateSiblingProgressEmail());
     return;
   }
   const student = document.getElementById('studentName').value.trim() || 'the student';
@@ -4534,7 +4642,7 @@ document.getElementById('genBtn').addEventListener('click', async ()=>{
     : `A reassessment is built into the next Learning Plan, so we'll follow up with another update once that's complete. In the meantime, please don't hesitate to reach out with any questions. Thank you!\n\n`;
   body += `Best,\n${staff}\n${center.name}`;
 
-  document.getElementById('emailOut').value = body;
+  setEmailOutput(body);
 });
 
 /* ---------------------------------------------------------
@@ -4575,17 +4683,21 @@ function emailTextToHtml(text, chartMap){
 }
 
 document.getElementById('copyBtn').addEventListener('click', async ()=>{
-  const ta = document.getElementById('emailOut');
+  const box = document.getElementById('emailOut');
   const ok = document.getElementById('copyOk');
   const showCopied = ()=>{ ok.style.display = 'inline'; setTimeout(()=>ok.style.display='none', 1600); };
 
+  // The box already holds real HTML (built at generation time, plus
+  // whatever formatting the user applied since), so this copies it as-is -
+  // no plain-text-to-HTML conversion needed here anymore.
+  const html = box.innerHTML;
+  const plain = box.innerText;
+
   if(navigator.clipboard && window.ClipboardItem){
     try{
-      const mode = document.querySelector('input[name="emailMode"]:checked').value;
-      const html = emailTextToHtml(ta.value, mode==='exit' ? exitChartDataUrls : null);
       await navigator.clipboard.write([
         new ClipboardItem({
-          'text/plain': new Blob([ta.value], {type:'text/plain'}),
+          'text/plain': new Blob([plain], {type:'text/plain'}),
           'text/html': new Blob([html], {type:'text/html'})
         })
       ]);
@@ -4595,9 +4707,17 @@ document.getElementById('copyBtn').addEventListener('click', async ()=>{
       console.error('Rich copy failed, falling back to plain text:', e);
     }
   }
-  // Fallback: plain-text-only copy (bullet character still shows, just not as a real <li>)
-  ta.select();
+  // Fallback for browsers without the modern clipboard API: select the
+  // box's own content (a contenteditable div has no .select() like a
+  // textarea does, so build a Range covering it manually) and use the
+  // legacy copy command.
+  const range = document.createRange();
+  range.selectNodeContents(box);
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
   document.execCommand('copy');
+  sel.removeAllRanges();
   showCopied();
 });
 
