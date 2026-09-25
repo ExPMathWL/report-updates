@@ -740,7 +740,7 @@
           <div class="field"><label>Commitment length</label><input type="text" id="rfaCommitment" placeholder="e.g. 6-Month"></div>
         </div>
         <label class="toggle-row"><input type="checkbox" id="rfaScheduling" checked>
-          <span>We handle scheduling through AppointyM<span class="toggle-note">Unchecked: ask the family what times work instead of mentioning the booking system.</span></span>
+          <span>We handle scheduling through myMathnasium<span class="toggle-note">Unchecked: ask the family what times work instead of mentioning the booking system.</span></span>
         </label>
         <label class="toggle-row"><input type="checkbox" id="rfaLearningPlan" checked>
           <span>We send a Learning Plan document<span class="toggle-note">Mentions the attached Learning Plan document in the email.</span></span>
@@ -3851,7 +3851,7 @@ function buildExitEmailHeader(){
   return `${name} - Total Progress Recap`;
 }
 
-/* Center-based defaults for the RFA toggles: MEV schedules through AppointyM
+/* Center-based defaults for the RFA toggles: MEV schedules through myMathnasium
    and sends a Learning Plan; West Linn mentions the day-at-Mathnasium
    overview instead. Homework policy isn't center-dependent, so it's left
    alone here. Applied on page load and whenever the center changes. */
@@ -4145,7 +4145,7 @@ function generateRfaEmail(){
   body += `Our hours and pricing are in the attached Parent Pack for your reference.\n\n`;
 
   if(scheduling){
-    body += `Once the enrollment documents are complete, you'll get a link to our online scheduling system, AppointyM, where you can book sessions at your convenience.\n\n`;
+    body += `Once the enrollment documents are complete, you'll get a link to our online scheduling system, myMathnasium, where you can book sessions at your convenience.\n\n`;
   } else {
     body += `Once the enrollment documents are complete, we'll get ${student}'s binder ready to go. ${center.name} runs on a drop-in basis, so ${pr.subj} can come in whenever works for your schedule.\n\n`;
   }
@@ -4222,7 +4222,7 @@ function generateSiblingRfaEmail(){
   body += `Our hours and pricing are in the attached Parent Pack for your reference.\n\n`;
 
   if(scheduling){
-    body += `Once the enrollment documents are complete, you'll get a link to our online scheduling system, AppointyM, where you can book sessions at your convenience.\n\n`;
+    body += `Once the enrollment documents are complete, you'll get a link to our online scheduling system, myMathnasium, where you can book sessions at your convenience.\n\n`;
   } else {
     body += `Once the enrollment documents are complete, we'll get their binders ready to go. ${center.name} runs on a drop-in basis, so they can come in whenever works for your schedule.\n\n`;
   }
