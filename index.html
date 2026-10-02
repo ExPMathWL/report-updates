@@ -1042,7 +1042,7 @@ async function detectDateForFile(file){
     }
     const chart = parseChart(rows);
     const hasTopics = chart.categories.some(c=>c.topics.length);
-    if(hasTopics) return chart.dates[0] || '';
+    if(hasTopics) return latestChartDate(chart) || '';
   }catch(e){
     console.error('Date detection failed for', file.name, e);
   }
@@ -1833,11 +1833,21 @@ function foldComparisonChart(chart){
   return out;
 }
 
-/* Merge two single-assessment charts (previous + current) by matching topic names */
+/* Merge two single-assessment charts (previous + current) by matching topic names.
+   Either side can itself be a "Comparison Chart" (a before/after pair baked into
+   one PDF, e.g. a completed Checkup #2 that already shows its own pre/post bars)
+   rather than a plain single snapshot. In that case index 0 is the OLD baked-in
+   pre-score, not what this assessment most recently measured - using it here
+   silently resurrects a stale score instead of the one that should carry
+   forward into the next comparison (e.g. showing Checkup 2's original 63%
+   instead of its finished 93% as the "previous" score for Checkup 3). Always
+   take the LAST score/date for a comparison-mode chart. */
+const latestChartScore = c => c.mode==='comparison' ? (c.scores[c.scores.length-1]||'') : (c.scores[0]||'');
+const latestChartDate = c => c.mode==='comparison' ? (c.dates[c.dates.length-1]||'') : (c.dates[0]||'');
 function mergeTwoCharts(prevChart, currChart){
   const out = {studentName: currChart.studentName || prevChart.studentName,
-               prevScore: prevChart.scores[0]||'', currScore: currChart.scores[0]||'',
-               prevDate: prevChart.dates[0]||'', currDate: currChart.dates[0]||'',
+               prevScore: latestChartScore(prevChart), currScore: latestChartScore(currChart),
+               prevDate: latestChartDate(prevChart), currDate: latestChartDate(currChart),
                categories:[]};
 
   const prevFlat = new Map(); // name -> {percent, category}
@@ -2009,6 +2019,21 @@ function describeAssessmentName(name){
   m = base.match(/^Level (\d+)$/i);
   if(m) return `${name} (core skills through ${gradeLabel(+m[1])})`;
   return name;
+}
+
+/* Same "Level N" -> grade-level explanation as describeAssessmentName, but
+   worded as a natural trailing clause ("which covers core skills through
+   3rd grade") instead of a parenthetical - for dropping straight into a
+   parent-facing sentence rather than a staff-facing label. Parents don't
+   know what "Level 3" means on its own, so this context belongs IN the
+   email, just not as a dangling "(...)" tacked onto the assessment name. */
+function parentFacingExplanation(label){
+  const clean = forParentFacing(label).replace(/\s+(A|B|Full)$/i, '');
+  let m = clean.match(/^Level (\d+) Extension$/i);
+  if(m) return `which extends Level ${m[1]} into geometry and data/statistics for ${gradeLabel(+m[1])}`;
+  m = clean.match(/^Level (\d+)$/i);
+  if(m) return `which covers core skills through ${gradeLabel(+m[1])}`;
+  return '';
 }
 
 /* Percentage-bar charts don't carry a "Level N" label the way narrative
@@ -3164,8 +3189,10 @@ async function parseAnyAssessmentFile(file){
     // so a filename guess isn't a safe fallback here the way it is for
     // narrative reports - content detection is the only source of truth.
     const checkupLabel = assessmentLabelFromCheckup(chart.checkup);
-    return {kind:'chart', file, studentName:chart.studentName, overall:chart.scores[0]||'',
-            topics:chartTopics, dateRaw:file.manualDate||chart.dates[0]||'', dateIsManual:!!file.manualDate,
+    // Same stale-score risk as mergeTwoCharts above: a Comparison Chart's
+    // own overall score/date need its LATEST bar, not scores[0]/dates[0].
+    return {kind:'chart', file, studentName:chart.studentName, overall:latestChartScore(chart),
+            topics:chartTopics, dateRaw:file.manualDate||latestChartDate(chart)||'', dateIsManual:!!file.manualDate,
             assessmentNames: checkupLabel ? [checkupLabel] : []};
   }
 
@@ -4498,9 +4525,32 @@ document.getElementById('genBtn').addEventListener('click', async ()=>{
   const prevScore = fracLabelToPct(prevScoreRaw);
   const preMode = !!dataset.singleChartMode;
 
+  // When the "previous" score came from a DIFFERENT assessment than the
+  // current one - a Checkup #2 -> Checkup #3 level-up merged by
+  // mergeTwoCharts, same idea as the narrative "clean level jump" case -
+  // comparing the two percentages head-on is misleading. A fresh, harder
+  // assessment starting lower than the old one finished isn't a decline,
+  // but a bare "scored 25% overall" with no mention of the 93% she just
+  // finished Checkup 2 at reads like one. Call the jump out explicitly
+  // instead of silently dropping the context.
+  const prevAssessmentLabel = (dataset.prevAssessmentsGiven && dataset.prevAssessmentsGiven[0])
+    ? forParentFacing(dataset.prevAssessmentsGiven[0]) : '';
+  const currAssessmentLabelClean = assessmentsGiven.length===1 ? forParentFacing(assessmentsGiven[0]) : '';
+  const leveledUp = !!prevAssessmentLabel && !!currAssessmentLabelClean &&
+    prevAssessmentLabel.toLowerCase() !== currAssessmentLabelClean.toLowerCase();
+
   const pv = toComparableNum(prevScoreRaw), cv = toComparableNum(currScoreRaw);
   let scoreLine = '';
-  if(!preMode && pv!==null && cv!==null){
+  if(leveledUp && cv!==null){
+    // Explain what the new level actually covers right where it's introduced
+    // - a parent has no way to know "Level 3" means anything on its own.
+    const currExplanation = parentFacingExplanation(currAssessmentLabelClean);
+    const currPhrase = `${currAssessmentLabelClean} assessment${currExplanation ? `, ${currExplanation}` : ''}`;
+    scoreLine = (pv!==null && pv>=85)
+      ? `Since ${pr.subj} performed so well on the ${prevAssessmentLabel} assessment, scoring ${prevScore} overall, we moved ${pr.obj} up to the ${currPhrase}. `
+      : `${student} has since moved on from the ${prevAssessmentLabel} assessment to the ${currPhrase}. `;
+    scoreLine += `This is new, harder material, so ${pr.subj} scored ${currScore} overall on this first attempt, which is a completely normal starting point.`;
+  } else if(!preMode && pv!==null && cv!==null){
     const d = Math.round((cv-pv)*10)/10;
     if(d>0) scoreLine = `On ${pr.poss} most recent attempt, ${pr.subj} improved ${pr.poss} score by ${d}%-points, scoring ${currScore} overall.`;
     else if(d<0) scoreLine = `On ${pr.poss} most recent attempt, ${pr.subj} scored ${currScore} overall.`;
@@ -4512,7 +4562,8 @@ document.getElementById('genBtn').addEventListener('click', async ()=>{
   }
   // A score this high means the assessment is basically outgrown - flag that
   // the next one is coming, rather than only reporting the score itself.
-  if(cv !== null && cv >= 85){
+  // Skip this when we already just said that (the leveledUp branch above).
+  if(!leveledUp && cv !== null && cv >= 85){
     scoreLine += ` Since ${pr.subj} scored so well, we'll be moving ${pr.obj} up to the next assessment as well!`;
   }
 
@@ -4553,8 +4604,16 @@ document.getElementById('genBtn').addEventListener('click', async ()=>{
 
   let body = `Hi ${parent}!\n\n`;
 
+  // forParentFacing strips the staff-only "(core skills through Nth grade)"
+  // parenthetical and the A/B/Full form tag off the raw label, but a parent
+  // still has no idea what "Level 3" means on its own - so for the single-
+  // assessment case, work that same explanation back in as a natural
+  // trailing clause instead of leaving it out or leaking it as "(...)".
   const assessmentPhrase = assessmentsGiven.length
-    ? (assessmentsGiven.length===1 ? `a ${assessmentsGiven[0]} assessment` : `the ${listJoin(assessmentsGiven)} assessments`)
+    ? (assessmentsGiven.length===1
+        ? (()=>{ const clean = forParentFacing(assessmentsGiven[0]); const exp = parentFacingExplanation(clean);
+                 return `a ${clean} assessment${exp ? `, ${exp}` : ''}`; })()
+        : `the ${listJoin(assessmentsGiven.map(forParentFacing))} assessments`)
     : 'an assessment';
 
   if(dataset.assessmentBreakdown && dataset.assessmentBreakdown.length > 1){
@@ -4612,9 +4671,16 @@ document.getElementById('genBtn').addEventListener('click', async ()=>{
     });
   } else {
     const introPrefix = center.includeIntroLine ? `This is ${staff} with Mathnasium. ` : '';
-    body += center.progressTrigger === 'learningPlan'
-      ? `${introPrefix}${student} recently completed ${pr.poss} Learning Plan, so it was time for a reassessment, and I wanted to share an update on ${pr.poss} progress! `
-      : `${introPrefix}${student} recently completed ${assessmentPhrase}, and I wanted to share an update on ${pr.poss} progress! `;
+    if(leveledUp){
+      // scoreLine already names both assessments and explains the jump -
+      // repeating "recently completed a Level 3 assessment" here first would
+      // just be confusing before the context lands.
+      body += `${introPrefix}I wanted to share an update on ${pr.poss} progress! `;
+    } else {
+      body += center.progressTrigger === 'learningPlan'
+        ? `${introPrefix}${student} recently completed ${pr.poss} Learning Plan, so it was time for a reassessment, and I wanted to share an update on ${pr.poss} progress! `
+        : `${introPrefix}${student} recently completed ${assessmentPhrase}, and I wanted to share an update on ${pr.poss} progress! `;
+    }
     if(!preMode && prevPlan){
       body += `${pr.subj[0].toUpperCase()+pr.subj.slice(1)} had been working on ${pr.poss} ${prevPlan} lesson plan since the last update. `;
     }
