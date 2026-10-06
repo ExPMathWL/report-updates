@@ -4524,6 +4524,8 @@ document.getElementById('genBtn').addEventListener('click', async ()=>{
   const currScore = fracLabelToPct(currScoreRaw);
   const prevScore = fracLabelToPct(prevScoreRaw);
   const preMode = !!dataset.singleChartMode;
+  const assessmentsGivenRaw = document.getElementById('assessmentsGiven').value.trim();
+  const assessmentsGiven = assessmentsGivenRaw ? assessmentsGivenRaw.split(',').map(s=>s.trim()).filter(Boolean) : [];
 
   // When the "previous" score came from a DIFFERENT assessment than the
   // current one - a Checkup #2 -> Checkup #3 level-up merged by
@@ -4576,8 +4578,6 @@ document.getElementById('genBtn').addEventListener('click', async ()=>{
     }
   });
   const planTopics = document.getElementById('planTopics').value.split('\n').map(s=>s.trim()).filter(Boolean);
-  const assessmentsGivenRaw = document.getElementById('assessmentsGiven').value.trim();
-  const assessmentsGiven = assessmentsGivenRaw ? assessmentsGivenRaw.split(',').map(s=>s.trim()).filter(Boolean) : [];
 
   // additional assessments (Numerical Fluency, etc.) — comparison-aware
   const extraNotes = extraCharts
