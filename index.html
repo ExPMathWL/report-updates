@@ -1656,6 +1656,33 @@ function parseTwoCardScores(rows){
   ];
 }
 
+/* Separate from parseTwoCardScores above, and deliberately NOT folded into
+   topAssessments (which other code already relies on meaning specifically
+   "the side-by-side boxes at the top of a combined report," per
+   parseTwoCardScores' own layout assumptions). Some Mastery Reports instead
+   list each assessment as its own plain "{Name} {num}/{den}" row, stacked
+   vertically under the "Assessment Skills" header - one row per assessment,
+   no side-by-side splitting needed. This exists purely as a last-resort
+   NAME fallback for when the filename itself didn't carry the assessment
+   name (see guessAssessmentNamesFromFilename's caller) - reading real
+   per-assessment names straight off the PDF beats leaving the field blank. */
+function parseAssessmentSkillsNames(rows){
+  const joinRow = r => r.map(i=>i.text).join(' ').replace(/\s+/g,' ').trim();
+  const startIdx = rows.findIndex(r => /^Assessment Skills$/i.test(joinRow(r)));
+  if(startIdx < 0) return null;
+  const legendWord = '(?:To Do|Initial Assessment|Recent Assessment|Awareness|Mastered)';
+  const legendRowRe = new RegExp(`^${legendWord}(\\s+${legendWord})*$`, 'i');
+  const out = [];
+  for(let i=startIdx+1; i<rows.length; i++){
+    const l = joinRow(rows[i]);
+    if(/^Assessment Topics$/i.test(l)) break;
+    if(legendRowRe.test(l)) continue;
+    const m = l.match(/^(.+?)\s+(\d+)\s*\/\s*(\d+)\s*$/);
+    if(m) out.push({name:m[1].trim(), num:m[2], den:m[3]});
+  }
+  return out.length ? out : null;
+}
+
 function parseNarrativeReport(rows){
   const joinRow = r => r.map(i=>i.text).join(' ').replace(/\s+/g,' ').trim();
   const fullText = rows.map(joinRow).join('\n');
@@ -1681,17 +1708,28 @@ function parseNarrativeReport(rows){
   // real score box ever appears, so matching on the phrase alone grabs the
   // wrong row - anchor on it sitting next to a fraction score instead. And
   // the three score boxes (Initial/Recent/Improvement) render side by side,
-  // so text extraction merges them into one wide row, with both dates
-  // similarly merged onto one row below ("April 04, 2026 August 12, 2026") -
-  // take the LAST date match there, since Recent is always the right-hand box.
+  // so text extraction USUALLY merges them into one wide row ("Initial
+  // Assessment 15/48 Recent Assessment 36/48 Improvement"), with both dates
+  // similarly merged onto one row below. But not always - some exports wrap
+  // the box labels onto their own rows with no numbers at all ("Initial
+  // Recent Improvement" / "Assessment Assessment"), leaving only a bare
+  // "39/58 46/60 Skills Mastered" row to anchor on, and can even wrap a
+  // date's year onto the next row by itself ("September 02," / "2026").
+  // Handle both: fall back to the bare-fractions row when the merged-label
+  // row isn't there, and join a few rows of text together before hunting
+  // for dates so a split year doesn't get missed or truncated.
+  const fracPairRow = r => /^\d+\s*\/\s*\d+\s+\d+\s*\/\s*\d+\s+Skills Mastered$/i.test(joinRow(r));
+  const datesInWindow = (startIdx, span) => {
+    const windowText = rows.slice(startIdx, startIdx+span).map(joinRow).join(' ').replace(/\s+/g,' ');
+    return windowText.match(/[A-Za-z]+ \d{1,2},\s*\d{4}/g) || windowText.match(/\d{1,2}\/\d{1,2}\/\d{4}/g) || [];
+  };
   if(isMastery){
-    const idx = rows.findIndex(r => /Recent Assessment\s+\d+\s*\/\s*\d+/i.test(joinRow(r)));
+    let idx = rows.findIndex(r => /Recent Assessment\s+\d+\s*\/\s*\d+/i.test(joinRow(r)));
+    if(idx < 0) idx = rows.findIndex(fracPairRow);
     if(idx >= 0){
-      for(let i=idx; i<Math.min(idx+6, rows.length); i++){
-        const l = joinRow(rows[i]);
-        const matches = l.match(/[A-Za-z]+ \d{1,2},\s*\d{4}/g) || l.match(/\d{1,2}\/\d{1,2}\/\d{4}/g);
-        if(matches && matches.length){ dateStr = matches[matches.length-1]; break; }
-      }
+      const found = datesInWindow(idx, 6);
+      if(found.length >= 2) dateStr = found[1]; // Initial, Recent, in that order
+      else if(found.length === 1) dateStr = found[0];
     }
   }
   if(!dateStr){
@@ -1707,13 +1745,21 @@ function parseNarrativeReport(rows){
   // no second file needed). The footer line ("38 / 41 93%") only ever gives
   // the Recent score, so grab the Initial score from its own labeled box too
   // - same merged-row layout as the date above ("Initial Assessment 19 / 41
-  // Recent Assessment 38 / 41 Improvement" all on one line).
+  // Recent Assessment 38 / 41 Improvement" all on one line), or the bare
+  // "39/58 46/60 Skills Mastered" fallback layout when the labels and
+  // numbers don't share a row.
   let initialOverall = null;
   if(isMastery){
     const initRow = rows.find(r => /Initial Assessment\s+\d+\s*\/\s*\d+/i.test(joinRow(r)));
     if(initRow){
       const m = joinRow(initRow).match(/Initial Assessment\s+(\d+)\s*\/\s*(\d+)/i);
       if(m) initialOverall = {num:m[1], den:m[2]};
+    } else {
+      const fracRow = rows.find(fracPairRow);
+      if(fracRow){
+        const fm = joinRow(fracRow).match(/^(\d+)\s*\/\s*(\d+)\s+\d+\s*\/\s*\d+\s+Skills Mastered$/i);
+        if(fm) initialOverall = {num:fm[1], den:fm[2]};
+      }
     }
   }
 
@@ -1788,7 +1834,15 @@ function parseNarrativeReport(rows){
   });
 
   return {mode: isMastery ? 'mastery' : 'assessment', studentName, date:dateStr,
-          categories, fallbackCategories, overall, initialOverall, topAssessments: parseTwoCardScores(rows)};
+          categories, fallbackCategories, overall, initialOverall,
+          // parseTwoCardScores reads the side-by-side boxes at the top of a
+          // combined report (Olivia Hiatt's "Level 6 Extension | Level 7"
+          // layout); parseAssessmentSkillsNames reads the same information
+          // from a report that instead stacks one "{Name} {num}/{den}" row
+          // per assessment under "Assessment Skills" (Isla Hansen's layout).
+          // Either shape means the same thing downstream - which assessments
+          // this page actually covers - so the two are interchangeable here.
+          topAssessments: parseTwoCardScores(rows) || parseAssessmentSkillsNames(rows)};
 }
 
 /* Numerical Fluency shows up as its own category ("Addition and Subtraction
@@ -3152,9 +3206,20 @@ async function parseAnyAssessmentFile(file){
   // over whatever date text we can pull out of the PDF itself.
   const narrative = parseNarrativeReport(rows);
   if(narrative && (narrativeMasteredFlat(narrative, false).length || narrative.fallbackCategories.length)){
+    let assessmentNames = guessAssessmentNamesFromFilename(file.name);
+    // Radius occasionally exports with the assessment-name segment of the
+    // filename blank (e.g. "Isla_Hansen___10_13_2026_10_38.pdf" - an empty
+    // run of underscores where a name like "Level_7" should sit), leaving
+    // this file with no detected name at all and no way to tell staff what
+    // assessment it even was. Fall back to reading the name(s) straight off
+    // the PDF's own topAssessments (its "Assessment Skills" section) rather
+    // than leaving it blank.
+    if(!assessmentNames.length && narrative.topAssessments){
+      assessmentNames = narrative.topAssessments.map(t=>describeAssessmentName(t.name));
+    }
     return {kind:'narrative', file, studentName:narrative.studentName, narrative,
             dateRaw:file.manualDate||narrative.date||'', dateIsManual:!!file.manualDate,
-            assessmentNames:guessAssessmentNamesFromFilename(file.name)};
+            assessmentNames};
   }
 
   const chart = parseChart(rows);
@@ -4068,7 +4133,13 @@ function buildChildSection(childDataset, childExtraCharts, assessmentsGivenStr, 
   let text = '';
 
   const topAssessments = childDataset.topAssessments;
-  if(topAssessments && topAssessments.length){
+  // >= 2 specifically: topAssessments can now come from either a combined
+  // report's side-by-side score boxes or its stacked "Assessment Skills"
+  // list, and the latter can return just one entry for an ordinary single-
+  // assessment file. A length-1 result isn't a "breakdown of assessments" -
+  // it should read with the normal single-assessment wording below, same as
+  // when topAssessments is null entirely.
+  if(topAssessments && topAssessments.length >= 2){
     const names = topAssessments.map(a=>forParentFacing(a.name));
     text += `I ended up giving ${name} our ${listJoin(names)} assessment${topAssessments.length>1?'s':''}.\n\n`;
     topAssessments.forEach(a=>{
