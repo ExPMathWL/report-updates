@@ -4667,7 +4667,7 @@ document.getElementById('genBtn').addEventListener('click', async ()=>{
       }
       line += '.';
       if(mentioned.length){
-        line += ` ${pr.subj[0].toUpperCase()+pr.subj.slice(1)} showed mastery in: ${listJoin(mentioned)}.`;
+        line += ` ${pr.subj[0].toUpperCase()+pr.subj.slice(1)} showed mastery in the following areas:\n\n${mentioned.map(s=>`• ${s}`).join('\n')}\n`;
       }
       return line;
     })
